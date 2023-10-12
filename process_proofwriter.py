@@ -304,7 +304,7 @@ def main(args):
 					if is_valid_row(args, non_stage_row['id']):
 						instances = PWQRuleInstance.from_json(non_stage_row, stage_rows) # returns a list of instances [instance1, instance2, ....]
 						for instance in instances:
-							output = instance.joint_tokenize(tokenizer, args.arch, split)
+							output = instance.next_tokenize(tokenizer, args.arch, split)
 							make_data_from_instance(data, output, get_keys(args.fairr_model))
 
 							# Do some accounting and upsampling if required

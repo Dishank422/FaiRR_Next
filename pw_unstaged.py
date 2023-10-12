@@ -185,7 +185,7 @@ class PWQRuleInstance:
 	def tokenize(self, tokenizer, arch, split):
 		return self.tokenize_ptlm(tokenizer)
 
-	def joint_tokenize_ptlm(self, tokenizer):
+	def next_tokenize_ptlm(self, tokenizer):
 		input_tokens = tokenizer.cls_token + self.ques + tokenizer.sep_token
 		for ruletext in self.rule_list:
 			input_tokens = input_tokens + ruletext + tokenizer.sep_token
@@ -205,8 +205,8 @@ class PWQRuleInstance:
 		token_labels[sep_token_indices] = [2*i for i in self.labels] + self.fact_labels
 		return input_ids, token_labels.tolist(), token_mask
 
-	def joint_tokenize(self, tokenizer, arch, split):
-		return self.joint_tokenize_ptlm(tokenizer)
+	def next_tokenize(self, tokenizer, arch, split):
+		return self.next_tokenize_ptlm(tokenizer)
 
 	@classmethod
 	def tokenize_batch(cls, tokenizer, batched_rules, batched_facts, batched_ques):
@@ -234,8 +234,29 @@ class PWQRuleInstance:
 		return input_ids, attn_mask, token_mask
 
 	@classmethod
-	def joint_tokenize_batch(cls, tokenizer, batched_rules, batched_facts, batched_ques):
-		...
+	def next_tokenize_batch(cls, tokenizer, batched_rules, batched_facts, batched_ques):
+		new_rules = [map(str.lower, rules) for rules in batched_rules]
+		new_facts = [map(str.lower, facts) for facts in batched_facts]
+		new_ques = [ques.lower() for ques in batched_ques]
+		input_tokens = [ques + tokenizer.sep_token + tokenizer.sep_token.join(rules) + tokenizer.sep_token + tokenizer.sep_token.join(facts) for ques, facts, rules in zip(new_ques, new_facts, new_rules)]
+		tokenized = tokenizer(input_tokens, add_special_tokens=True, padding=True, truncation=True, return_tensors='pt', return_special_tokens_mask=True)
+		input_ids = tokenized['input_ids']
+		attn_mask = tokenized['attention_mask']
+
+		# create dummy input tokens to quickly identify the first occurrence of tokenizer.sep_token that's present after ques
+		dummy_input_tokens = [ques + tokenizer.sep_token for ques in new_ques]
+		dummy_tokenized = tokenizer(dummy_input_tokens, add_special_tokens=True, padding='max_length', max_length=input_ids.shape[1], truncation=True, return_tensors='pt', return_special_tokens_mask=True)
+		dummy_input_ids = dummy_tokenized['input_ids']
+		first_sep_token_mask = (dummy_input_ids == tokenizer.sep_token_id) * (~dummy_tokenized['special_tokens_mask'].bool())
+
+		token_mask = (input_ids == tokenizer.sep_token_id)
+		sep_mask = first_sep_token_mask  # add the first sep token - we want that to be False as well in token_mask
+
+		sep_mask += (tokenized['special_tokens_mask'] * token_mask).bool()
+		token_mask[sep_mask.bool()] = False
+		token_mask[:, 0] = 1
+
+		return input_ids, attn_mask, token_mask
 
 
 class PWQFactInstance:
