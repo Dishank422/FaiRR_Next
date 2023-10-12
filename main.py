@@ -3,7 +3,7 @@ from data import DataModule
 from fairr_ruleselector_model import FaiRRRuleSelector
 from fairr_factselector_model import FaiRRFactSelector
 from fairr_reasoner_model import FaiRRReasoner
-from proof_inference import FaiRRInference
+from proof_inference import FaiRRInference, FaiRRNextInference
 from fairr_nextselector_model import FaiRRNextSelector
 
 model_dict = {
@@ -11,6 +11,7 @@ model_dict = {
 	'fairr_factselector'      : FaiRRFactSelector,
 	'fairr_reasoner'          : FaiRRReasoner,
 	'fairr_inference'         : FaiRRInference,
+	'fairr_nextinference'	  : FaiRRNextInference,
 	'fairr_nextselector'	  : FaiRRNextSelector,
 }
 
@@ -20,6 +21,7 @@ monitor_dict = {
 	'fair_nextselector'		  : ('valid_macro_f1_epoch', 'max'),
 	'fairr_reasoner'          : ('valid_acc_epoch', 'max'),
 	'fairr_inference'         : ('valid_acc_epoch', 'max'),
+	'fairr_nextinference'	  : ('valid_acc_epoch', 'max'),
 }
 
 def generate_hydra_overrides():
@@ -212,6 +214,25 @@ def main(args, splits='all'):
 				gpus=args.gpus,
 			)
 
+	elif args.model == 'fairr_nextinference':
+		model = model_dict[args.model](
+			nextselector_ckpt=args.nextselector_ckpt,
+			reasoner_ckpt=args.reasoner_ckpt,
+			arch=args.arch,
+			train_batch_size=args.train_batch_size,
+			eval_batch_size=args.eval_batch_size,
+			accumulate_grad_batches=args.accumulate_grad_batches,
+			learning_rate=args.learning_rate,
+			max_epochs=args.max_epochs,
+			optimizer=args.optimizer,
+			adam_epsilon=args.adam_epsilon,
+			weight_decay=args.weight_decay,
+			lr_scheduler=args.lr_scheduler,
+			warmup_updates=args.warmup_updates,
+			freeze_epochs=args.freeze_epochs,
+			gpus=args.gpus,
+		)
+
 	return dm, model, trainer
 
 
@@ -224,7 +245,7 @@ if __name__ == '__main__':
 	if args.resume_training:
 		assert args.ckpt_path != ''
 	if args.evaluate_ckpt:
-		if args.model == 'fairr_inference':
+		if args.model == 'fairr_inference' or args.model == 'fairr_nextinference':
 			pass
 		else:
 			assert args.ckpt_path != ''
@@ -252,7 +273,7 @@ if __name__ == '__main__':
 			os.remove(trainer.checkpoint_callback.best_model_path)
 	else:
 		# evaluate the pretrained model on the provided splits
-		if args.model == 'fairr_inference':
+		if args.model == 'fairr_inference' or args.model == 'fairr_nextinference':
 			model_ckpt = model
 		else:
 			model_ckpt = model.load_from_checkpoint(args.ckpt_path)

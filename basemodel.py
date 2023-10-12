@@ -107,6 +107,7 @@ class BaseModel(pl.LightningModule):
 		parser.add_argument('--ruleselector_ckpt', 			default='', 						type=str,)
 		parser.add_argument('--factselector_ckpt', 			default='', 						type=str,)
 		parser.add_argument('--reasoner_ckpt', 				default='', 						type=str,)
+		parser.add_argument('--nextselector_ckpt', 			default='', 						type=str, )
 
 		# FaiRR ruleselector specific params
 		parser.add_argument('--cls_dropout', 				default=0.1, 						type=float,)

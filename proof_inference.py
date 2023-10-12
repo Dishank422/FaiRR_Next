@@ -20,8 +20,8 @@ class FaiRRInference(BaseModel):
 	local_proof_accuracy = []
 	local_step = 0
 
-	def __init__(self, ruleselector_ckpt, factselector_ckpt, reasoner_ckpt, arch='', train_batch_size=1, eval_batch_size=1, accumulate_grad_batches=1, learning_rate=1e-5, \
-					max_epochs=1, optimizer='adamw', adam_epsilon=1e-8, weight_decay=0.0, lr_scheduler='fixed', warmup_updates=0.0, freeze_epochs=-1, gpus=1):
+	def __init__(self, ruleselector_ckpt, factselector_ckpt, reasoner_ckpt, arch='', train_batch_size=1, eval_batch_size=1, accumulate_grad_batches=1, learning_rate=1e-5,
+				 max_epochs=1, optimizer='adamw', adam_epsilon=1e-8, weight_decay=0.0, lr_scheduler='fixed', warmup_updates=0.0, freeze_epochs=-1, gpus=1):
 		super().__init__(train_batch_size=train_batch_size, max_epochs=max_epochs, gpus=gpus)
 		self.save_hyperparameters()
 
@@ -163,31 +163,6 @@ class FaiRRInference(BaseModel):
 			self.count_error_graphs += 1
 			return (0, [['None']])
 
-	def calc_acc(self, preds, targets):
-		matched = np.array(preds) == np.array(targets)
-		return 100 * np.mean(matched), matched
-
-	def match_proof(self, all_proofs, all_gold_proofs, ans_match):
-		res = []
-		for idx in range(len(all_proofs)):
-			proofs = all_proofs[idx]
-			gold_proofs = all_gold_proofs[idx]
-
-			gold_proofs_counter = [Counter(x) for x in gold_proofs]
-			gold_proofs_counter = [Counter({y:1 for y in x}) for x in gold_proofs_counter]
-
-			found = False
-			for prf in proofs:
-				if Counter({y:1 for y in Counter(prf)}) in gold_proofs_counter:
-					found = True
-					break
-
-			res.append(found)
-
-		final_res = res * ans_match
-
-		return 100 * np.mean(final_res), final_res
-
 	def run_step(self, batch, split):
 		out         = self(batch)
 		targets     = batch['all_answer']
@@ -195,12 +170,12 @@ class FaiRRInference(BaseModel):
 
 		# calculate question entailment accuracy
 		preds              = [x[0] for x in out]
-		ans_acc, ans_match = self.calc_acc(preds, targets)
+		ans_acc, ans_match = calc_acc(preds, targets)
 		ans_acc            = torch.FloatTensor([ans_acc]).to(self.reasoner.device)
 
 		# calculate proof match accuracy
 		proofs             = [x[1] for x in out]
-		prf_acc, prf_match = self.match_proof(proofs, gold_proofs, ans_match)
+		prf_acc, prf_match = match_proof(proofs, gold_proofs, ans_match)
 		self.local_proof_accuracy.append(prf_acc)
 		prf_acc = torch.FloatTensor([prf_acc]).to(self.reasoner.device)
 
@@ -249,6 +224,169 @@ class FaiRRInference(BaseModel):
 			},
 			{
 				'params'      : [p for n, p in self.fact_selector.named_parameters() if any(nd in n for nd in no_decay)],
+				'weight_decay': 0.0,
+			}
+		]
+
+		optimizer_grouped_parameters += [
+			{
+				'params'      : [p for n, p in self.reasoner.named_parameters() if not any(nd in n for nd in no_decay)],
+				'weight_decay': self.p.weight_decay,
+			},
+			{
+				'params'      : [p for n, p in self.reasoner.named_parameters() if any(nd in n for nd in no_decay)],
+				'weight_decay': 0.0,
+			}
+		]
+
+		if self.p.optimizer == 'adamw':
+			optimizer = AdamW(optimizer_grouped_parameters, lr=self.p.learning_rate)
+		else:
+			raise NotImplementedError
+
+		if self.p.lr_scheduler == 'linear_with_warmup':
+			if self.p.warmup_updates > 1.0:
+				warmup_steps = int(self.p.warmup_updates)
+			else:
+				warmup_steps = int(self.total_steps * self.p.warmup_updates)
+			print(f'\nTotal steps: {self.total_steps} with warmup steps: {warmup_steps}\n')
+
+			scheduler = get_scheduler("linear", optimizer=optimizer, num_warmup_steps=warmup_steps, num_training_steps=self.total_steps)
+			scheduler = {
+				'scheduler': scheduler,
+				'interval': 'step',
+				'frequency': 1
+			}
+		elif self.p.lr_scheduler == 'fixed':
+			return [optimizer]
+		else:
+			raise NotImplementedError
+
+		return [optimizer], [scheduler]
+
+
+class FaiRRNextInference(BaseModel):
+
+	# counter to count the # times proof generation fails (mainly due to cycles in proof graph)
+	count_error_graphs = 0
+
+	# local accounting of proof accuracy
+	local_proof_accuracy = []
+	local_step = 0
+
+	def __init__(self, nextselector_ckpt, reasoner_ckpt, arch='', train_batch_size=1,
+				 eval_batch_size=1, accumulate_grad_batches=1, learning_rate=1e-5,
+				 max_epochs=1, optimizer='adamw', adam_epsilon=1e-8, weight_decay=0.0, lr_scheduler='fixed',
+				 warmup_updates=0.0, freeze_epochs=-1, gpus=1):
+		super().__init__(train_batch_size=train_batch_size, max_epochs=max_epochs, gpus=gpus)
+		self.save_hyperparameters()
+
+		self.p = types.SimpleNamespace()
+		self.p.arch = arch
+		self.p.train_batch_size = train_batch_size
+		self.p.eval_batch_size = eval_batch_size
+		self.p.accumulate_grad_batches = accumulate_grad_batches
+		self.p.learning_rate = learning_rate
+		self.p.max_epochs = max_epochs
+		self.p.optimizer = optimizer
+		self.p.adam_epsilon = adam_epsilon
+		self.p.weight_decay = weight_decay
+		self.p.lr_scheduler = lr_scheduler
+		self.p.warmup_updates = warmup_updates
+		self.p.freeze_epochs = freeze_epochs
+		self.p.gpus = gpus
+
+		self.next_selector = FaiRRRuleSelector().load_from_checkpoint(nextselector_ckpt)
+		self.next_tokenizer = self.next_selector.tokenizer
+
+		self.reasoner = FaiRRReasoner().load_from_checkpoint(reasoner_ckpt)
+		self.reasoner_tokenizer = self.reasoner.tokenizer
+
+	def forward(self, batch):
+		facts = batch['all_facts']
+		rules = batch['all_rules']
+		ques = batch['all_ques']
+		batch_size = len(facts)
+		device = self.reasoner.device
+		count = 0
+		stop = False
+		output_dict = [dict() for _ in range(batch_size)]
+		proof_dict = [ddict(list) for _ in range(batch_size)]
+
+		# prefill the proof_dict with single triples
+		for idx in range(batch_size):
+			for fact in facts[idx]:
+				proof_dict[idx][fact].append(([fact], ''))  # value format: ([facts], rule
+
+	def solver(self, facts, ques, proof_dict, gold_proof=None, gold_ans=None):
+		try:
+			# check if question is already in facts
+			if ques in facts:
+				proofs = generate_proof(ques, proof_dict)
+				return (1, proofs)
+			else:
+				# try to negate the ques and see if its present
+				ques_neg = negate(ques)
+				if ques_neg in facts:
+					proofs = generate_proof(ques_neg, proof_dict)
+					return (-1, proofs)
+				else:
+					# no proof exists.
+					return (0, [['None']])
+		except Exception as e:
+			self.count_error_graphs += 1
+			return (0, [['None']])
+
+	def run_step(self, batch, split):
+		out         = self(batch)
+		targets     = batch['all_answer']
+		gold_proofs = batch['all_proof']
+
+		# calculate question entailment accuracy
+		preds              = [x[0] for x in out]
+		ans_acc, ans_match = calc_acc(preds, targets)
+		ans_acc            = torch.FloatTensor([ans_acc]).to(self.reasoner.device)
+
+		# calculate proof match accuracy
+		proofs             = [x[1] for x in out]
+		prf_acc, prf_match = match_proof(proofs, gold_proofs, ans_match)
+		self.local_proof_accuracy.append(prf_acc)
+		prf_acc = torch.FloatTensor([prf_acc]).to(self.reasoner.device)
+
+		self.local_step += 1
+		if self.local_step % 20 == 0:
+			print(f'\nProof Accuracy: {np.mean(self.local_proof_accuracy)}\n')
+
+		if split == 'train':
+			self.log(f'train_ans_acc_step', ans_acc, prog_bar=True)
+			self.log(f'train_prf_acc_step', prf_acc, prog_bar=True)
+		else:
+			self.log(f'{split}_ans_acc_step', ans_acc, prog_bar=True, sync_dist=True)
+			self.log(f'{split}_prf_acc_step', prf_acc, prog_bar=True, sync_dist=True)
+
+		return {'ans_acc': ans_acc, 'prf_acc': prf_acc, 'loss': torch.FloatTensor([0]).to(self.reasoner.device)}
+
+	def aggregate_epoch(self, outputs, split):
+		ans_acc = torch.stack([x['ans_acc'] for x in outputs]).mean()
+		prf_acc = torch.stack([x['prf_acc'] for x in outputs]).mean()
+
+		if split == 'train':
+			self.log(f'train_ans_acc_epoch', ans_acc.item())
+			self.log(f'train_prf_acc_epoch', prf_acc.item())
+		else:
+			self.log(f'{split}_ans_acc_epoch', ans_acc.item(), sync_dist=True)
+			self.log(f'{split}_prf_acc_epoch', prf_acc.item(), sync_dist=True)
+			self.log(f'Graph Cycle Errors: ', self.count_error_graphs, sync_dist=True)
+
+	def configure_optimizers(self):
+		no_decay = ['bias', 'LayerNorm.weight']
+		optimizer_grouped_parameters = [
+			{
+				'params'      : [p for n, p in self.next_selector.named_parameters() if not any(nd in n for nd in no_decay)],
+				'weight_decay': self.p.weight_decay,
+			},
+			{
+				'params'      : [p for n, p in self.next_selector.named_parameters() if any(nd in n for nd in no_decay)],
 				'weight_decay': 0.0,
 			}
 		]
@@ -385,3 +523,28 @@ def generate_proof(last_fact, proof_dict, last_rule=None):
 				all_proofs.extend(permuted)
 
 	return all_proofs
+
+def calc_acc(preds, targets):
+	matched = np.array(preds) == np.array(targets)
+	return 100 * np.mean(matched), matched
+
+def match_proof(all_proofs, all_gold_proofs, ans_match):
+	res = []
+	for idx in range(len(all_proofs)):
+		proofs = all_proofs[idx]
+		gold_proofs = all_gold_proofs[idx]
+
+		gold_proofs_counter = [Counter(x) for x in gold_proofs]
+		gold_proofs_counter = [Counter({y:1 for y in x}) for x in gold_proofs_counter]
+
+		found = False
+		for prf in proofs:
+			if Counter({y:1 for y in Counter(prf)}) in gold_proofs_counter:
+				found = True
+				break
+
+		res.append(found)
+
+	final_res = res * ans_match
+
+	return 100 * np.mean(final_res), final_res
