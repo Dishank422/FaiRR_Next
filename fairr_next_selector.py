@@ -6,7 +6,7 @@ from helper import *
 from basemodel import BaseModel
 
 
-class FaiRRJointSelector(BaseModel):
+class FaiRRNextSelector(BaseModel):
     def __init__(self, arch='roberta_large', train_batch_size=16, eval_batch_size=16, accumulate_grad_batches=1, learning_rate=1e-5, max_epochs=5,\
                     optimizer='adamw', adam_epsilon=1e-8, weight_decay=0.0, lr_scheduler='linear_with_warmup', warmup_updates=0.0, freeze_epochs=-1, gpus=1,\
                     hf_name='roberta-large'):
