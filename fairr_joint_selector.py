@@ -35,13 +35,12 @@ class FaiRRJointSelector(BaseModel):
         self.out_dim         = out_dim
         self.rule_classifier = nn.Linear(out_dim, 1)
         self.fact_classifier = nn.Linear(out_dim, 1)
-        self.dropout    = torch.nn.Dropout(self.text_encoder.config.hidden_dropout_prob)
+        self.dropout         = torch.nn.Dropout(self.text_encoder.config.hidden_dropout_prob)
 
         xavier_normal_(self.fact_classifier.weight)
         self.fact_classifier.bias.data.zero_()
         xavier_normal_(self.rule_classifier.weight)
         self.rule_classifier.bias.data.zero_()
-
 
     def forward(self, input_ids, attn_mask):
         last_hidden_state = self.text_encoder(input_ids=input_ids, attention_mask=attn_mask)['last_hidden_state']  # shape (batchsize, seqlen, hiddensize)
@@ -52,4 +51,53 @@ class FaiRRJointSelector(BaseModel):
         return fact_logits, rule_logits
 
 
+    def configure_optimizers(self):
+        no_decay = ['bias', 'LayerNorm.weight']
+        optimizer_grouped_parameters = [
+            {
+                'params': [p for n, p in self.text_encoder.named_parameters() if not any(nd in n for nd in no_decay)],
+                'weight_decay': self.p.weight_decay,
+            },
+            {
+                'params': [p for n, p in self.text_encoder.named_parameters() if any(nd in n for nd in no_decay)],
+                'weight_decay': 0.0,
+            }
+        ]
 
+        optimizer_grouped_parameters += [
+            {
+                'params': [p for n, p in self.classifier.named_parameters() if not any(nd in n for nd in no_decay)],
+                'weight_decay': self.p.weight_decay,
+            },
+            {
+                'params': [p for n, p in self.classifier.named_parameters() if any(nd in n for nd in no_decay)],
+                'weight_decay': 0.0,
+            }
+        ]
+
+        if self.p.optimizer == 'adamw':
+            optimizer = AdamW(optimizer_grouped_parameters, lr=self.p.learning_rate, eps=self.p.adam_epsilon,
+                              betas=[0.9, 0.98])
+        else:
+            raise NotImplementedError
+
+        if self.p.lr_scheduler == 'linear_with_warmup':
+            if self.p.warmup_updates > 1.0:
+                warmup_steps = int(self.p.warmup_updates)
+            else:
+                warmup_steps = int(self.total_steps * self.p.warmup_updates)
+            print(f'\nTotal steps: {self.total_steps} with warmup steps: {warmup_steps}\n')
+
+            scheduler = get_scheduler("linear", optimizer=optimizer, num_warmup_steps=warmup_steps,
+                                      num_training_steps=self.total_steps)
+            scheduler = {
+                'scheduler': scheduler,
+                'interval': 'step',
+                'frequency': 1
+            }
+        elif self.p.lr_scheduler == 'fixed':
+            return [optimizer]
+        else:
+            raise NotImplementedError
+
+        return [optimizer], [scheduler]
