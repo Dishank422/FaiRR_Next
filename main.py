@@ -4,17 +4,20 @@ from fairr_ruleselector_model import FaiRRRuleSelector
 from fairr_factselector_model import FaiRRFactSelector
 from fairr_reasoner_model import FaiRRReasoner
 from proof_inference import FaiRRInference
+from fairr_nextselector_model import FaiRRNextSelector
 
 model_dict = {
 	'fairr_ruleselector'      : FaiRRRuleSelector,
 	'fairr_factselector'      : FaiRRFactSelector,
 	'fairr_reasoner'          : FaiRRReasoner,
 	'fairr_inference'         : FaiRRInference,
+	'fairr_nextselector'	  : FaiRRNextSelector,
 }
 
 monitor_dict = {
 	'fairr_ruleselector'      : ('valid_macro_f1_epoch', 'max'),
 	'fairr_factselector'      : ('valid_macro_f1_epoch', 'max'),
+	'fair_nextselector'		  : ('valid_macro_f1_epoch', 'max'),
 	'fairr_reasoner'          : ('valid_acc_epoch', 'max'),
 	'fairr_inference'         : ('valid_acc_epoch', 'max'),
 }
@@ -153,7 +156,7 @@ def main(args, splits='all'):
 				cls_dropout=args.cls_dropout,
 			)
 
-	elif args.model == 'fairr_factselector':
+	elif args.model == 'fairr_factselector' or args.model == 'fairr_nextselector':
 		model = model_dict[args.model](
 				arch=args.arch,
 				train_batch_size=args.train_batch_size,
