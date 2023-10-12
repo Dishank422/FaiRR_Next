@@ -47,12 +47,14 @@ class PWInstance:
 
 class PWQRuleInstance:
 
-	def __init__(self, rule_list, facts_para, ques, labels, strategy):
+	def __init__(self, rule_list, facts_para, ques, labels, strategy, fact_labels=None, fact_list=None):
 		self.rule_list  = rule_list
 		self.facts_para = facts_para
 		self.ques       = ques
 		self.labels     = labels # labels for rules [0,1,0 ....] of length = no. of rules
 		self.strategy   = strategy
+		self.fact_labels= fact_labels
+		self.fact_list 	= fact_list
 
 	@classmethod
 	def from_json(cls, non_stage_json_dict, stage_json_dicts):
@@ -69,6 +71,9 @@ class PWQRuleInstance:
 			ques, answer, strategy, proofs, qdep = question
 			facts_para, fact_list, _ = get_facts(non_stage_json_dict)
 			rules_para, rule_list, _, _, _ = get_rules(non_stage_json_dict)
+
+			fact2num = {fact_list[k]: k + 1 for k in range(len(fact_list))}  # {fact1_text:1, fact2_text:2, ......}
+			num_facts = len(fact_list)
 
 			if strategy in ['proof', 'inv-proof']:
 				# for these strategies, the proofs exist,
@@ -106,23 +111,31 @@ class PWQRuleInstance:
 
 								if(inference_added in proof_inters_text):
 									labels = np.zeros(len(rule_list))
+									fact_labels = np.zeros(len(fact_list))
 									rule_id_for_inference = inferences1[inference_added][3]
 
 									facts_for_inference = inferences1[inference_added][0] # list of fact texts for making the inference
 									for f in facts_for_inference:
 										assert f in fact_list # assert would hit and take this to the except state where some values will be reset and we will do the loop again over stage files
 										labels[int(rule_id_for_inference[4:])-1] = 1 # ie if proof_rules[i] = rule18 then labels[17] = 1. note: rules start from 1 ie rule1, rule2, ...
+										fact_labels[fact2num[f] - 1] = 1  # ie if proof_facts[i] = triple18 then labels[17] = 1. note: triples start from 1 ie triple1, triple2, ...
 
-									instances_ques.append(PWQRuleInstance(rule_list, facts_para, ques, labels.tolist(), strategy))
+									instances_ques.append(PWQRuleInstance(rule_list, facts_para, ques, labels.tolist(), strategy, fact_labels.tolist(), fact_list))
 									facts_para = facts_para + ' ' + inference_added # update facts para
 									assert inference_added not in fact_list # before adding it to the fact list, check if its not present already
 									fact_list.append(inference_added) # update fact list
+
+									assert inference_added not in fact2num.keys()
+									fact2num[inference_added] = num_facts + 1
+									num_facts += 1
+									assert len(fact_list) == num_facts
 
 							else:
 								assert (len(inferences1) == 0) #no. of infrences is 0 for the last json dict
 								# make a datapoint where no rule is selected
 								labels = np.zeros(len(rule_list))
-								instances_ques.append(PWQRuleInstance(rule_list, facts_para, ques, labels.tolist(), strategy))
+								fact_labels = np.zeros(len(fact_list))
+								instances_ques.append(PWQRuleInstance(rule_list, facts_para, ques, labels.tolist(), strategy, fact_labels.tolist(), fact_list))
 
 						found_proof = True
 						instances.extend(instances_ques)
@@ -133,6 +146,8 @@ class PWQRuleInstance:
 					except Exception as e:
 						# reset the values of the following
 						facts_para, fact_list, _ = get_facts(non_stage_json_dict)
+						fact2num = {fact_list[k]: k + 1 for k in range(len(fact_list))}  # {fact1_text:1, fact2_text:2, ......}
+						num_facts = len(fact_list)
 						instances_ques = []
 						continue # to the next proof since this didnot work
 
@@ -141,7 +156,8 @@ class PWQRuleInstance:
 				# the proof for all these is None.
 				# make a datapoint where no rule is selected
 				labels = np.zeros(len(rule_list))
-				instances.append(PWQRuleInstance(rule_list, facts_para, ques, labels.tolist(), strategy))
+				fact_labels = np.zeros(len(fact_list))
+				instances.append(PWQRuleInstance(rule_list, facts_para, ques, labels.tolist(), strategy, fact_labels.tolist(), fact_list))
 
 
 		return instances
@@ -169,6 +185,29 @@ class PWQRuleInstance:
 	def tokenize(self, tokenizer, arch, split):
 		return self.tokenize_ptlm(tokenizer)
 
+	def joint_tokenize_ptlm(self, tokenizer):
+		input_tokens = tokenizer.cls_token + self.ques + tokenizer.sep_token
+		for ruletext in self.rule_list:
+			input_tokens = input_tokens + ruletext + tokenizer.sep_token
+		for facttext in self.fact_list:
+			input_tokens = input_tokens + facttext + tokenizer.sep_token
+
+		input_tokens_tokenized = tokenizer.tokenize(input_tokens)
+		input_ids = tokenizer.convert_tokens_to_ids(input_tokens_tokenized)
+		token_mask = [1 if token == tokenizer.sep_token else 0 for token in input_tokens_tokenized]
+
+		sep_token_indices = [i for i in range(len(token_mask)) if token_mask[i] == 1]
+		token_mask[sep_token_indices[-1]], token_mask[sep_token_indices[0]] = 0, 0  # since the first and last sep token doesnot correspond to any rule
+		sep_token_indices = sep_token_indices[1:-1]
+		token_labels = np.zeros(len(token_mask))
+		assert (len(self.labels) + len(self.fact_labels)) == len(sep_token_indices)
+
+		token_labels[sep_token_indices] = [2*i for i in self.labels] + self.fact_labels
+		return input_ids, token_labels.tolist(), token_mask
+
+	def joint_tokenize(self, tokenizer, arch, split):
+		return self.joint_tokenize_ptlm(tokenizer)
+
 	@classmethod
 	def tokenize_batch(cls, tokenizer, batched_rules, batched_facts, batched_ques):
 		new_rules        = [map(str.lower, rules) for rules in batched_rules]
@@ -193,6 +232,10 @@ class PWQRuleInstance:
 		token_mask[:, 0] = 1
 
 		return input_ids, attn_mask, token_mask
+
+	@classmethod
+	def joint_tokenize_batch(cls, tokenizer, batched_rules, batched_facts, batched_ques):
+		...
 
 
 class PWQFactInstance:

@@ -93,7 +93,7 @@ class DataModule(pl.LightningDataModule):
 			elif self.p.dataset.startswith('pwu_') or self.p.dataset.startswith('pwur_'):
 				self.data[split] = FaiRRInferenceDataset(self.load_dataset(split))
 
-			elif self.p.dataset.startswith('pwq_') and self.p.dataset.endswith('rule'):
+			elif self.p.dataset.startswith('pwq_') and (self.p.dataset.endswith('rule') or self.p.dataset.endswith('next')):
 				self.data[split] = FaiRRRuleSelectorDataset(self.load_dataset(split), self.p.pad_idx)
 
 			elif self.p.dataset.startswith('pwq_') and self.p.dataset.endswith('fact'):

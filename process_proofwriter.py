@@ -52,7 +52,7 @@ def get_pw_subdir(dataset):
 	return subdir
 
 def get_keys(fairr_model):
-	if fairr_model == 'fairr_rule' or fairr_model == 'fairr_fact':
+	if fairr_model == 'fairr_rule' or fairr_model == 'fairr_fact' or fairr_model == 'fairr_next':
 		return ['input_ids', 'token_labels', 'token_mask']
 	else:
 		return ['input_ids', 'output_ids']
@@ -297,6 +297,26 @@ def main(args):
 							output   = instance.tokenize(tokenizer, args.arch, split)
 							make_data_from_instance(data, output, get_keys(args.fairr_model))
 
+			elif args.fairr_model == 'fairr_next':
+				for row_chunk in tqdm(row_chunks):
+					non_stage_row = row_chunk[0] # row chunk is of the form [non-stagefile1, stagefile1-add0, stagefile1-add1 ...]
+					stage_rows    = row_chunk[1:]
+					if is_valid_row(args, non_stage_row['id']):
+						instances = PWQRuleInstance.from_json(non_stage_row, stage_rows) # returns a list of instances [instance1, instance2, ....]
+						for instance in instances:
+							output = instance.joint_tokenize(tokenizer, args.arch, split)
+							make_data_from_instance(data, output, get_keys(args.fairr_model))
+
+							# Do some accounting and upsampling if required
+							if sum(instance.labels) > 0.0:
+								pos_count += 1
+							else:
+								assert sum(instance.labels) == 0.0
+								if instance.strategy in ['proof', 'inv-proof']:
+									good_neg_count += 1
+								else:
+									bad_neg_count += 1
+
 #########################################
 
 # write the data in pickle format to processed folder
@@ -323,7 +343,7 @@ if __name__ == '__main__':
 												'pwur_leq_3_eq_0_attr', 'pwur_leq_3_eq_1_attr', 'pwur_leq_3_eq_2_attr', 'pwur_leq_3_eq_3_attr', 'pwur_leq_3_eq_100_attr',\
 												'pwur_leq_3_eq_0_name$attr', 'pwur_leq_3_eq_1_name$attr', 'pwur_leq_3_eq_2_name$attr', 'pwur_leq_3_eq_3_name$attr',\
 												'pwur_leq_3_eq_100_name$attr'])
-	parser.add_argument('--fairr_model', choices=['fairr_rule', 'fairr_fact', 'fairr_reasoner', 'fairr_iter'])
+	parser.add_argument('--fairr_model', choices=['fairr_rule', 'fairr_fact', 'fairr_reasoner', 'fairr_iter', 'fairr_next'])
 	parser.add_argument('--world_assump', default='OWA', choices=['OWA'])
 	parser.add_argument('--arch', default='roberta_large', choices=['t5_base', 'roberta_large', 't5_large'])
 	args = parser.parse_args()
