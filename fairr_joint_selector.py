@@ -66,11 +66,22 @@ class FaiRRJointSelector(BaseModel):
 
         optimizer_grouped_parameters += [
             {
-                'params': [p for n, p in self.classifier.named_parameters() if not any(nd in n for nd in no_decay)],
+                'params': [p for n, p in self.rule_classifier.named_parameters() if not any(nd in n for nd in no_decay)],
                 'weight_decay': self.p.weight_decay,
             },
             {
-                'params': [p for n, p in self.classifier.named_parameters() if any(nd in n for nd in no_decay)],
+                'params': [p for n, p in self.rule_classifier.named_parameters() if any(nd in n for nd in no_decay)],
+                'weight_decay': 0.0,
+            }
+        ]
+
+        optimizer_grouped_parameters += [
+            {
+                'params': [p for n, p in self.fact_classifier.named_parameters() if not any(nd in n for nd in no_decay)],
+                'weight_decay': self.p.weight_decay,
+            },
+            {
+                'params': [p for n, p in self.fact_classifier.named_parameters() if any(nd in n for nd in no_decay)],
                 'weight_decay': 0.0,
             }
         ]
