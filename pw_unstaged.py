@@ -202,7 +202,7 @@ class PWQRuleInstance:
 		token_labels = np.zeros(len(token_mask))
 		assert (len(self.labels) + len(self.fact_labels)) == len(sep_token_indices)
 
-		token_labels[sep_token_indices] = [2*i for i in self.labels] + self.fact_labels
+		token_labels[sep_token_indices] = [3*i for i in self.labels] + [i+1 for i in self.fact_labels]
 		return input_ids, token_labels.tolist(), token_mask
 
 	def next_tokenize(self, tokenizer, arch, split):
