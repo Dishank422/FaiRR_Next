@@ -197,12 +197,14 @@ class PWQRuleInstance:
 		token_mask = [1 if token == tokenizer.sep_token else 0 for token in input_tokens_tokenized]
 
 		sep_token_indices = [i for i in range(len(token_mask)) if token_mask[i] == 1]
-		token_mask[sep_token_indices[-1]], token_mask[sep_token_indices[0]] = 0, 0  # since the first and last sep token doesnot correspond to any rule
-		sep_token_indices = sep_token_indices[1:-1]
+		token_mask[sep_token_indices[-1]] = 0 # we want the last sep token to be masked as it does not correspond to any fact
+		sep_token_indices = sep_token_indices[:-1]
 		token_labels = np.zeros(len(token_mask))
 		assert (len(self.labels) + len(self.fact_labels)) == len(sep_token_indices)
+		for i in sep_token_indices[len(self.labels):]:
+			token_mask[i] = 2
 
-		token_labels[sep_token_indices] = [3*i for i in self.labels] + [i+1 for i in self.fact_labels]
+		token_labels[sep_token_indices] = self.labels + self.fact_labels
 		return input_ids, token_labels.tolist(), token_mask
 
 	def next_tokenize(self, tokenizer, arch, split):
@@ -243,17 +245,15 @@ class PWQRuleInstance:
 		input_ids = tokenized['input_ids']
 		attn_mask = tokenized['attention_mask']
 
-		# create dummy input tokens to quickly identify the first occurrence of tokenizer.sep_token that's present after ques
-		dummy_input_tokens = [ques + tokenizer.sep_token for ques in new_ques]
-		dummy_tokenized = tokenizer(dummy_input_tokens, add_special_tokens=True, padding='max_length', max_length=input_ids.shape[1], truncation=True, return_tensors='pt', return_special_tokens_mask=True)
-		dummy_input_ids = dummy_tokenized['input_ids']
-		first_sep_token_mask = (dummy_input_ids == tokenizer.sep_token_id) * (~dummy_tokenized['special_tokens_mask'].bool())
-
 		token_mask = (input_ids == tokenizer.sep_token_id)
-		sep_mask = first_sep_token_mask  # add the first sep token - we want that to be False as well in token_mask
+		token_mask[(tokenized['special_tokens_mask'] * token_mask).bool()] = 0
 
-		sep_mask += (tokenized['special_tokens_mask'] * token_mask).bool()
-		token_mask[sep_mask.bool()] = False
+		for i in range(len(token_mask)):
+			sep_token_indices = [j for j in range(len(token_mask[i])) if token_mask[i, j] == 1]
+			token_mask[i, sep_token_indices[-1]] = 0
+			sep_token_indices = sep_token_indices[:-1]
+			for j in sep_token_indices[len(new_rules[i]):]:
+				token_mask[i, j] = 2
 		token_mask[:, 0] = 1
 
 		return input_ids, attn_mask, token_mask
