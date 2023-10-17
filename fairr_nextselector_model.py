@@ -61,7 +61,7 @@ class FaiRRNextSelector(BaseModel):
         token_mask=torch.where(token_mask_copy==1,1,0)
 
         # First filter out the logits corresponding to the valid tokens
-        mask_len          = token_mask.sum(1) # (batchsize) eg [8,3,2,1]
+        mask_len          = [len(torch.nonzero(t)) for t in token_mask] # (batchsize) eg [8,3,2,1]
         mask_nonzero      = torch.nonzero(token_mask) # (z, 2) size tensor, having x, y coordinates of non zero elements. z = no. of non zero elements
         y_indices         = torch.cat([torch.arange(x) for x in mask_len]).to(device)
         x_indices         = mask_nonzero[:, 0]
