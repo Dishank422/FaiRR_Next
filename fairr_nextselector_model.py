@@ -53,7 +53,7 @@ class FaiRRNextSelector(BaseModel):
     def predict(self, input_ids, token_mask, attn_mask):
         device  = input_ids.device
         outputs = self(input_ids, attn_mask)
-        logits  = outputs
+        fact_logits, rule_logits  = outputs
 
         token_mask_copy=token_mask.detach().clone()
                 
@@ -61,12 +61,12 @@ class FaiRRNextSelector(BaseModel):
         token_mask=torch.where(token_mask_copy==1,1,0)
 
         # First filter out the logits corresponding to the valid tokens
-        mask_len          = [len(torch.nonzero(t)) for t in token_mask] # (batchsize) eg [8,3,2,1]
+        mask_len          = token_mask.sum(1) # (batchsize) eg [8,3,2,1]
         mask_nonzero      = torch.nonzero(token_mask) # (z, 2) size tensor, having x, y coordinates of non zero elements. z = no. of non zero elements
         y_indices         = torch.cat([torch.arange(x) for x in mask_len]).to(device)
         x_indices         = mask_nonzero[:, 0]
         filtered_logits   = torch.full((input_ids.shape[0], mask_len.max()), -1000.0).to(device)
-        filtered_logits[x_indices, y_indices] = torch.masked_select(logits, token_mask.bool())
+        filtered_logits[x_indices, y_indices] = torch.masked_select(rule_logits, token_mask.bool())
 
         # Then compute the predictions for each of the logit
         argmax_filtered_logits	= torch.argmax(filtered_logits, dim=1)
@@ -100,7 +100,7 @@ class FaiRRNextSelector(BaseModel):
         y_indices         = torch.cat([torch.arange(x) for x in mask_len]).to(device)
         x_indices         = mask_nonzero[:, 0]
         filtered_logits   = torch.full((input_ids.shape[0], mask_len.max()), -1000.0).to(device)
-        filtered_logits[x_indices, y_indices] = torch.masked_select(logits, token_mask.bool())
+        filtered_logits[x_indices, y_indices] = torch.masked_select(fact_logits, token_mask.bool())
 
         # Then compute the predictions for each of the logit
         preds             = (filtered_logits > 0.0)
