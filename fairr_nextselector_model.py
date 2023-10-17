@@ -235,8 +235,8 @@ class FaiRRNextSelector(BaseModel):
         token_mask=torch.where(token_mask_copy==1,1,0)
         relevant_outputs        = rule_outputs * token_mask
         argmax_relevant_outputs = torch.argmax(relevant_outputs, dim=1)
-        rule_loss                    = self.calc_loss(rule_outputs.squeeze(), targets.squeeze(), token_mask.squeeze())
-        rule_preds                   = (F.one_hot(argmax_relevant_outputs, num_classes=rule_outputs.shape[1])).int()
+        rule_loss, _            = self.calc_loss(rule_outputs.squeeze(), targets.squeeze(), token_mask.squeeze())
+        rule_preds              = (F.one_hot(argmax_relevant_outputs, num_classes=rule_outputs.shape[1])).int()
         perf_metrics            = self.calc_perf_metrics(rule_preds.squeeze(), targets.squeeze(), token_mask.squeeze())
 
         if split == 'train':
@@ -253,8 +253,8 @@ class FaiRRNextSelector(BaseModel):
         # for facts
         token_mask=torch.where(token_mask_copy==2,1,0)
         fact_preds        = (fact_outputs > 0.0).float().squeeze()
-        fact_loss         = self.calc_loss(fact_outputs.squeeze(), targets.squeeze(), token_mask.squeeze())
-        perf_metrics = self.calc_perf_metrics(fact_preds.squeeze(), targets.squeeze(), token_mask.squeeze())
+        _, fact_loss      = self.calc_loss(fact_outputs.squeeze(), targets.squeeze(), token_mask.squeeze())
+        perf_metrics      = self.calc_perf_metrics(fact_preds.squeeze(), targets.squeeze(), token_mask.squeeze())
 
         if split == 'train':
             self.log(f'facts train_loss_step', fact_loss.item(), prog_bar=True)
