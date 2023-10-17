@@ -118,7 +118,7 @@ class FaiRRNextSelector(BaseModel):
 
         return filtered_rule_ids, filtered_rule_mask, filtered_fact_ids, filtered_fact_mask
 
-    def calc_loss(self, outputs, targets, token_mask):
+    def calc_loss(self, rule_outputs, fact_outputs, targets, token_mask):
         token_mask_copy=token_mask.detach().clone()
         
         # for rules
@@ -127,7 +127,7 @@ class FaiRRNextSelector(BaseModel):
         # all rows of target are one hot, i.e., there is only 1 rule that needs to be selected
         assert torch.all(torch.sum(targets * token_mask, dim=1) == torch.ones(targets.shape[0]).to(targets.device))
 
-        exp_logits = torch.exp(outputs)
+        exp_logits = torch.exp(rule_outputs)
         assert exp_logits.shape == token_mask.shape
 
         masked_exp_logits = exp_logits * token_mask
@@ -148,7 +148,7 @@ class FaiRRNextSelector(BaseModel):
         # for facts
         token_mask=torch.where(token_mask_copy==2,1,0)
 
-        loss_not_reduced =  F.binary_cross_entropy_with_logits(outputs, targets, reduction = 'none')
+        loss_not_reduced =  F.binary_cross_entropy_with_logits(fact_outputs, targets, reduction = 'none')
         assert loss_not_reduced.shape == token_mask.shape
         loss_masked = loss_not_reduced * token_mask
         fact_loss_reduced = loss_masked.sum()/token_mask.sum()
@@ -201,13 +201,14 @@ class FaiRRNextSelector(BaseModel):
         token_mask_copy = batch['all_token_mask']
         targets    = batch['all_token_labels']
 
+        rule_loss, fact_loss = self.calc_loss(rule_outputs.squeeze(), fact_outputs.squeeze(), targets.squeeze(), token_mask_copy.squeeze())
+
         # for rules
         token_mask=torch.where(token_mask_copy==1,1,0)
         relevant_outputs        = rule_outputs * token_mask
         argmax_relevant_outputs = torch.argmax(relevant_outputs, dim=1)
-        rule_loss, _            = self.calc_loss(rule_outputs.squeeze(), targets.squeeze(), token_mask.squeeze())
         rule_preds              = (F.one_hot(argmax_relevant_outputs, num_classes=rule_outputs.shape[1])).int()
-        perf_metrics, _         = self.calc_perf_metrics(rule_preds.squeeze(), targets.squeeze(), token_mask.squeeze())
+        perf_metrics            = self.calc_perf_metrics(rule_preds.squeeze(), targets.squeeze(), token_mask.squeeze())
 
         if split == 'train':
             self.log(f'rules train_loss_step', rule_loss.item(), prog_bar=True)
@@ -218,13 +219,10 @@ class FaiRRNextSelector(BaseModel):
             for metric in perf_metrics.keys():
                 self.log(f'rules {split}_{metric}_step', perf_metrics[metric], prog_bar=True)
 
-        rule_run={'loss': rule_loss, 'preds': rule_preds, 'targets': targets, 'token_mask': token_mask}
-
         # for facts
         token_mask=torch.where(token_mask_copy==2,1,0)
         fact_preds        = (fact_outputs > 0.0).float().squeeze()
-        _, fact_loss      = self.calc_loss(fact_outputs.squeeze(), targets.squeeze(), token_mask.squeeze())
-        _, perf_metrics   = self.calc_perf_metrics(fact_preds.squeeze(), targets.squeeze(), token_mask.squeeze())
+        perf_metrics      = self.calc_perf_metrics(fact_preds.squeeze(), targets.squeeze(), token_mask.squeeze())
 
         if split == 'train':
             self.log(f'facts train_loss_step', fact_loss.item(), prog_bar=True)
@@ -234,10 +232,8 @@ class FaiRRNextSelector(BaseModel):
             self.log(f'facts {split}_loss_step', fact_loss.item(), prog_bar=True, sync_dist=True)
             for metric in perf_metrics.keys():
                 self.log(f'facts {split}_{metric}_step', perf_metrics[metric], prog_bar=True)
-
-        fact_run={'loss': fact_loss, 'preds': fact_preds, 'targets': targets, 'token_mask': token_mask}
-
-        return rule_run, fact_run
+        lambd = 1
+        return {'loss': rule_loss+lambd*fact_loss, 'rule_preds': rule_preds, 'fact_preds': fact_preds, 'targets': targets, 'token_mask': token_mask_copy}
     
     def aggregate_epoch(self, rule_outputs, fact_outputs, split):
         rule_preds        = torch.cat([x['preds'].reshape(-1) for x in rule_outputs])
