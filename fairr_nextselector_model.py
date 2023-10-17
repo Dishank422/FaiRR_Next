@@ -232,8 +232,11 @@ class FaiRRNextSelector(BaseModel):
             self.log(f'facts {split}_loss_step', fact_loss.item(), prog_bar=True, on_step=True, on_epoch=True)
             for metric in perf_metrics.keys():
                 self.log(f'facts {split}_{metric}_step', perf_metrics[metric], on_step=True, on_epoch=True)
+
         lambd = 1
-        return {'loss': rule_loss+lambd*fact_loss}
+        loss = rule_loss+lambd*fact_loss
+        self.log('loss', loss.item(), prog_bar=True, on_step=True, on_epoch=True)
+        return {'loss': loss}
     
     def aggregate_epoch(self, outputs, split):
         # rule_preds        = torch.cat([x['rule_preds'].reshape(-1) for x in outputs])
