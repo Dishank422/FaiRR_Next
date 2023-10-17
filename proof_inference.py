@@ -7,7 +7,8 @@ from helper import *
 from basemodel import BaseModel
 from proofwriter_classes import PWReasonerInstance, PWQRuleInstance, PWQFactInstance
 from fairr_ruleselector_model import FaiRRRuleSelector
-from fairr_factselector_model import FaiRRFactSelector
+from fairr_factselector_model import FaiRRFactSelector 
+from fairr_nextselector_model import FaiRRNextSelector 
 from fairr_reasoner_model import FaiRRReasoner
 
 
@@ -296,7 +297,7 @@ class FaiRRNextInference(BaseModel):
 		self.p.freeze_epochs = freeze_epochs
 		self.p.gpus = gpus
 
-		self.next_selector = FaiRRRuleSelector().load_from_checkpoint(nextselector_ckpt)
+		self.next_selector = FaiRRNextSelector().load_from_checkpoint(nextselector_ckpt)
 		self.next_tokenizer = self.next_selector.tokenizer
 
 		self.reasoner = FaiRRReasoner().load_from_checkpoint(reasoner_ckpt)
@@ -317,6 +318,85 @@ class FaiRRNextInference(BaseModel):
 		for idx in range(batch_size):
 			for fact in facts[idx]:
 				proof_dict[idx][fact].append(([fact], ''))  # value format: ([facts], rule
+
+		try:
+			while not stop:
+				# process data for rule selector and select rule
+				input_ids, attn_mask, token_mask = PWQRuleInstance.next_tokenize_batch(self.next_tokenizer, rules, facts, ques)
+				rule_ids, rule_mask, fact_ids, fact_mask = self.next_selector.predict(input_ids.to(device), token_mask.to(device), attn_mask.to(device))
+
+				# loop break condition
+				if rule_mask.sum().item() == 0:
+					stop = True
+					break
+
+				for idx in range(rule_ids.shape[1]):
+					selected_rules = [rules[x][y] for x,y in zip(range(batch_size), rule_ids[:, idx])]
+
+					# this will be used to determine which inferences to keep and which ones to reject (batching trick)
+					valid_mask     = rule_mask[:, idx]
+
+					# # process data for fact selector and select facts for the selected rule
+					# input_ids, attn_mask, token_mask = PWQFactInstance.tokenize_batch(self.fact_tokenizer, selected_rules, facts, ques)
+					# fact_ids, fact_mask = self.fact_selector.predict(input_ids.to(device), token_mask.to(device), attn_mask.to(device))
+
+					# update valid_mask to account for cases when no facts are selected (batching trick)
+					valid_mask     = valid_mask * fact_mask
+
+					# if nothing is valid then stop
+					if valid_mask.sum() == 0:
+						stop = True
+						break
+
+					selected_facts = [[facts[x][y] for y in fact_ids[x] if y != -1] for x in range(batch_size)]
+
+					# generate intermediate conclusion
+					input_ids   = PWReasonerInstance.tokenize_batch(self.reasoner_tokenizer, selected_rules, selected_facts)
+					conclusions = self.reasoner.predict_and_decode(torch.LongTensor(input_ids).to(device))
+
+					new_conc = False	# This flag checks if any new intermediate conclusion was generated in this round for any of the instance in the batch
+					for batch_idx in range(batch_size):
+						if valid_mask[batch_idx]:
+							# add proof to output_dict and increase count
+							out_key   = ' '.join(selected_facts[batch_idx]) + '::' + selected_rules[batch_idx] + '::' + conclusions[batch_idx].lower()
+							proof_key = conclusions[batch_idx].lower()
+
+							if out_key not in output_dict[batch_idx]:
+								new_conc = True
+								output_dict[batch_idx][out_key] = 1
+								facts[batch_idx].append(conclusions[batch_idx].lower())
+
+								if len(selected_facts[batch_idx]) == 0:
+									sys.stdout = sys.__stdout__; import pdb; pdb.set_trace()
+
+								# update proof_dict
+								proof_dict[batch_idx][proof_key].append((selected_facts[batch_idx], selected_rules[batch_idx]))
+							else:
+								output_dict[batch_idx][out_key] += 1
+
+					facts = [list(set(x)) for x in facts]
+
+					# if there are no new conclusions in the batch and all selected rules have been tried, then stop
+					if not new_conc and (idx + 1 == rule_ids.shape[1]):
+						stop = True
+
+					# fail-safe to check for infinite loops cases, if any
+					count += 1
+					if count == 1000:
+						print('Stop hit!')
+						sys.stdout = sys.__stdout__; import pdb; pdb.set_trace()
+
+		except Exception as e:
+			print('Exception Cause: {}'.format(e.args[0]))
+			print(traceback.format_exc())
+
+		# solve each instance in batch
+		results = []
+		for idx in range(batch_size):
+			ans, prf = self.solver(facts[idx], ques[idx], dict(proof_dict[idx]))
+			results.append((ans, prf))
+
+		return results
 
 	def solver(self, facts, ques, proof_dict, gold_proof=None, gold_ans=None):
 		try:
