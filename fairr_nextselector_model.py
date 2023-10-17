@@ -164,17 +164,7 @@ class FaiRRNextSelector(BaseModel):
         return acc
     
     def calc_acc(self, preds, targets, token_mask):
-        token_mask_copy=token_mask.detach().clone()
-        
-        # for rules
-        token_mask=torch.where(token_mask_copy==1,1,0)
-        rule_acc=self.calc_acc_util(preds, targets, token_mask)
-
-        # for facts
-        token_mask=torch.where(token_mask_copy==2,1,0)
-        fact_acc=self.calc_acc_util(preds, targets, token_mask)
-        
-        return rule_acc, fact_acc
+        return self.calc_acc_util(preds, targets, token_mask)
     
     def calc_F1_util(self, preds, targets, token_mask):
         '''calculates the binary F1 score between preds and targets, with positive class being 1'''
@@ -194,17 +184,7 @@ class FaiRRNextSelector(BaseModel):
         return {'f1_class1':binary_f1_class1, 'f1_class0':binary_f1_class0, 'macro_f1':macro_f1, 'micro_f1':micro_f1}
     
     def calc_F1(self, preds, targets, token_mask):
-        token_mask_copy=token_mask.detach().clone()
-        
-        # for rules
-        token_mask=torch.where(token_mask_copy==1,1,0)
-        rule_F1=self.calc_F1_util(preds, targets, token_mask)
-
-        # for facts
-        token_mask=torch.where(token_mask_copy==2,1,0)
-        fact_F1=self.calc_F1_util(preds, targets, token_mask)
-        
-        return rule_F1, fact_F1
+        return self.calc_F1_util(preds, targets, token_mask)
     
 
     def calc_perf_metrics_util(self, preds, targets, token_mask):
@@ -214,17 +194,7 @@ class FaiRRNextSelector(BaseModel):
         return {'acc':acc, 'f1_class1':F1_scores['f1_class1'], 'f1_class0':F1_scores['f1_class0'], 'macro_f1':F1_scores['macro_f1'], 'micro_f1':F1_scores['micro_f1']}
     
     def calc_perf_metrics(self, preds, targets, token_mask):
-        token_mask_copy=token_mask.detach().clone()
-        
-        # for rules
-        token_mask=torch.where(token_mask_copy==1,1,0)
-        rule_perf=self.calc_perf_metrics_util(preds, targets, token_mask)
-
-        # for facts
-        token_mask=torch.where(token_mask_copy==2,1,0)
-        fact_perf=self.calc_perf_metrics_util(preds, targets, token_mask)
-        
-        return rule_perf, fact_perf
+        return self.calc_perf_metrics_util(preds, targets, token_mask)
     
     def run_step(self, batch, split):
         rule_outputs, fact_outputs = self(batch['all_sents'], batch['attn_mask'])
