@@ -211,13 +211,13 @@ class FaiRRNextSelector(BaseModel):
         perf_metrics            = self.calc_perf_metrics(rule_preds.squeeze(), targets.squeeze(), token_mask.squeeze())
 
         if split == 'train':
-            self.log(f'rules train_loss_step', rule_loss.item(), prog_bar=True)
+            self.log(f'rules train_loss_step', rule_loss.item(), prog_bar=True, on_step=True, on_epoch=True)
             for metric in perf_metrics.keys():
-                self.log(f'rules train_{metric}_step', perf_metrics[metric], prog_bar=True)
+                self.log(f'rules train_{metric}_step', perf_metrics[metric], on_step=True, on_epoch=True)
         else:
-            self.log(f'rules {split}_loss_step', rule_loss.item(), prog_bar=True, sync_dist=True)
+            self.log(f'rules {split}_loss_step', rule_loss.item(), prog_bar=True, on_step=True, on_epoch=True)
             for metric in perf_metrics.keys():
-                self.log(f'rules {split}_{metric}_step', perf_metrics[metric], prog_bar=True)
+                self.log(f'rules {split}_{metric}_step', perf_metrics[metric], on_step=True, on_epoch=True)
 
         # for facts
         token_mask=torch.where(token_mask_copy==2,1,0)
@@ -225,58 +225,59 @@ class FaiRRNextSelector(BaseModel):
         perf_metrics      = self.calc_perf_metrics(fact_preds.squeeze(), targets.squeeze(), token_mask.squeeze())
 
         if split == 'train':
-            self.log(f'facts train_loss_step', fact_loss.item(), prog_bar=True)
+            self.log(f'facts train_loss_step', fact_loss.item(), prog_bar=True, on_step=True, on_epoch=True)
             for metric in perf_metrics.keys():
-                self.log(f'facts train_{metric}_step', perf_metrics[metric], prog_bar=True)
+                self.log(f'facts train_{metric}_step', perf_metrics[metric], on_step=True, on_epoch=True)
         else:
-            self.log(f'facts {split}_loss_step', fact_loss.item(), prog_bar=True, sync_dist=True)
+            self.log(f'facts {split}_loss_step', fact_loss.item(), prog_bar=True, on_step=True, on_epoch=True)
             for metric in perf_metrics.keys():
-                self.log(f'facts {split}_{metric}_step', perf_metrics[metric], prog_bar=True)
+                self.log(f'facts {split}_{metric}_step', perf_metrics[metric], on_step=True, on_epoch=True)
         lambd = 1
-        return {'loss': rule_loss+lambd*fact_loss, 'rule_preds': rule_preds, 'fact_preds': fact_preds, 'targets': targets, 'token_mask': token_mask_copy}
+        return {'loss': rule_loss+lambd*fact_loss}
     
-    def aggregate_epoch(self, rule_outputs, fact_outputs, split):
-        rule_preds        = torch.cat([x['preds'].reshape(-1) for x in rule_outputs])
-        targets      = torch.cat([x['targets'].reshape(-1) for x in rule_outputs])
-        token_mask   = torch.cat([x['token_mask'].reshape(-1) for x in rule_outputs])
-        rule_loss         = torch.stack([x['loss'] for x in rule_outputs]).mean()
-        rule_perf_metrics = self.calc_perf_metrics(rule_preds.squeeze(), targets.squeeze(), token_mask.squeeze())
-
-        if split == 'train':
-            self.log(f'rules train_loss_epoch', rule_loss.item())
-            for metric in rule_perf_metrics.keys():
-                self.log(f'rules train_{metric}_epoch', rule_perf_metrics[metric], prog_bar=True)
-        elif split == 'valid':
-            self.log(f'rules valid_loss_epoch', rule_loss.item(), sync_dist=True)
-            for metric in rule_perf_metrics.keys():
-                self.log(f'rules valid_{metric}_epoch', rule_perf_metrics[metric], prog_bar=True)
-        elif split == 'test':
-            self.log(f'rules test_loss_epoch', rule_loss.item(), sync_dist=True)
-            for metric in rule_perf_metrics.keys():
-                self.log(f'rules test_{metric}_epoch', rule_perf_metrics[metric], prog_bar=True)
-            self.predictions = torch.stack((rule_preds, targets), dim=1)
-            print('predictions tensor in ruletaker class, shape = {}'.format(self.predictions.shape))
-
-        fact_preds        = torch.cat([x['preds'].reshape(-1) for x in fact_outputs])
-        targets      = torch.cat([x['targets'].reshape(-1) for x in fact_outputs])
-        token_mask   = torch.cat([x['token_mask'].reshape(-1) for x in fact_outputs])
-        fact_loss         = torch.stack([x['loss'] for x in fact_outputs]).mean()
-        fact_perf_metrics = self.calc_perf_metrics(fact_preds.squeeze(), targets.squeeze(), token_mask.squeeze())
-
-        if split == 'train':
-            self.log(f'facts train_loss_epoch', fact_loss.item())
-            for metric in rule_perf_metrics.keys():
-                self.log(f'facts train_{metric}_epoch', fact_perf_metrics[metric], prog_bar=True)
-        elif split == 'valid':
-            self.log(f'facts valid_loss_epoch', fact_loss.item(), sync_dist=True)
-            for metric in rule_perf_metrics.keys():
-                self.log(f'facts valid_{metric}_epoch', fact_perf_metrics[metric], prog_bar=True)
-        elif split == 'test':
-            self.log(f'facts test_loss_epoch', fact_loss.item(), sync_dist=True)
-            for metric in rule_perf_metrics.keys():
-                self.log(f'facts test_{metric}_epoch', fact_perf_metrics[metric], prog_bar=True)
-            self.predictions = torch.stack((fact_preds, targets), dim=1)
-            print('predictions tensor in ruletaker class, shape = {}'.format(self.predictions.shape))
+    def aggregate_epoch(self, outputs, split):
+        # rule_preds        = torch.cat([x['rule_preds'].reshape(-1) for x in outputs])
+        # targets      = torch.cat([x['targets'].reshape(-1) for x in outputs])
+        # token_mask   = torch.cat([x['token_mask'].reshape(-1) for x in outputs])
+        # rule_loss         = torch.stack([x['loss'] for x in outputs]).mean()
+        # rule_perf_metrics = self.calc_perf_metrics(rule_preds.squeeze(), targets.squeeze(), token_mask.squeeze())
+        #
+        # if split == 'train':
+        #     self.log(f'rules train_loss_epoch', rule_loss.item())
+        #     for metric in rule_perf_metrics.keys():
+        #         self.log(f'rules train_{metric}_epoch', rule_perf_metrics[metric], prog_bar=True)
+        # elif split == 'valid':
+        #     self.log(f'rules valid_loss_epoch', rule_loss.item(), sync_dist=True)
+        #     for metric in rule_perf_metrics.keys():
+        #         self.log(f'rules valid_{metric}_epoch', rule_perf_metrics[metric], prog_bar=True)
+        # elif split == 'test':
+        #     self.log(f'rules test_loss_epoch', rule_loss.item(), sync_dist=True)
+        #     for metric in rule_perf_metrics.keys():
+        #         self.log(f'rules test_{metric}_epoch', rule_perf_metrics[metric], prog_bar=True)
+        #     self.predictions = torch.stack((rule_preds, targets), dim=1)
+        #     print('predictions tensor in ruletaker class, shape = {}'.format(self.predictions.shape))
+        #
+        # fact_preds        = torch.cat([x['preds'].reshape(-1) for x in outputs])
+        # targets      = torch.cat([x['targets'].reshape(-1) for x in outputs])
+        # token_mask   = torch.cat([x['token_mask'].reshape(-1) for x in outputs])
+        # fact_loss         = torch.stack([x['loss'] for x in outputs]).mean()
+        # fact_perf_metrics = self.calc_perf_metrics(fact_preds.squeeze(), targets.squeeze(), token_mask.squeeze())
+        #
+        # if split == 'train':
+        #     self.log(f'facts train_loss_epoch', fact_loss.item())
+        #     for metric in rule_perf_metrics.keys():
+        #         self.log(f'facts train_{metric}_epoch', fact_perf_metrics[metric], prog_bar=True)
+        # elif split == 'valid':
+        #     self.log(f'facts valid_loss_epoch', fact_loss.item(), sync_dist=True)
+        #     for metric in rule_perf_metrics.keys():
+        #         self.log(f'facts valid_{metric}_epoch', fact_perf_metrics[metric], prog_bar=True)
+        # elif split == 'test':
+        #     self.log(f'facts test_loss_epoch', fact_loss.item(), sync_dist=True)
+        #     for metric in rule_perf_metrics.keys():
+        #         self.log(f'facts test_{metric}_epoch', fact_perf_metrics[metric], prog_bar=True)
+        #     self.predictions = torch.stack((fact_preds, targets), dim=1)
+        #     print('predictions tensor in ruletaker class, shape = {}'.format(self.predictions.shape))
+        return
 
     def configure_optimizers(self):
         no_decay = ['bias', 'LayerNorm.weight']
