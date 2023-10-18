@@ -120,7 +120,7 @@ class PWQRuleInstance:
 										labels[int(rule_id_for_inference[4:])-1] = 1 # ie if proof_rules[i] = rule18 then labels[17] = 1. note: rules start from 1 ie rule1, rule2, ...
 										fact_labels[fact2num[f] - 1] = 1  # ie if proof_facts[i] = triple18 then labels[17] = 1. note: triples start from 1 ie triple1, triple2, ...
 
-									instances_ques.append(PWQRuleInstance(rule_list, facts_para, ques, labels.tolist(), strategy, fact_labels.tolist(), fact_list))
+									instances_ques.append(PWQRuleInstance(rule_list, facts_para, ques, labels.tolist(), strategy, fact_labels.tolist(), list(fact_list)))
 									facts_para = facts_para + ' ' + inference_added # update facts para
 									assert inference_added not in fact_list # before adding it to the fact list, check if its not present already
 									fact_list.append(inference_added) # update fact list
@@ -135,7 +135,7 @@ class PWQRuleInstance:
 								# make a datapoint where no rule is selected
 								labels = np.zeros(len(rule_list))
 								fact_labels = np.zeros(len(fact_list))
-								instances_ques.append(PWQRuleInstance(rule_list, facts_para, ques, labels.tolist(), strategy, fact_labels.tolist(), fact_list))
+								instances_ques.append(PWQRuleInstance(rule_list, facts_para, ques, labels.tolist(), strategy, fact_labels.tolist(), list(fact_list)))
 
 						found_proof = True
 						instances.extend(instances_ques)
@@ -191,7 +191,6 @@ class PWQRuleInstance:
 			input_tokens = input_tokens + ruletext + tokenizer.sep_token
 		for facttext in self.fact_list:
 			input_tokens = input_tokens + facttext + tokenizer.sep_token
-
 		input_tokens_tokenized = tokenizer.tokenize(input_tokens)
 		input_ids = tokenizer.convert_tokens_to_ids(input_tokens_tokenized)
 		token_mask = [1 if token == tokenizer.sep_token else 0 for token in input_tokens_tokenized]
