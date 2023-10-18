@@ -1,4 +1,4 @@
-model: fairr_ruleselector
+model: fairr_nextselector
 arch: roberta_large
 hf_name: roberta-large
 padding: 1
