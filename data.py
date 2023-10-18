@@ -81,7 +81,7 @@ class DataModule(pl.LightningDataModule):
 
 		return dataset
 
-	def setup(self, splits='all'):
+	def setup(self, splits='all', stage=None):
 		self.data = ddict(list)
 		if splits == 'all':
 			splits = ['train', 'dev', 'test']
