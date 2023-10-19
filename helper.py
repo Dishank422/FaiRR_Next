@@ -21,7 +21,7 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence, pad_sequence
 from torch.utils.data import DataLoader, Dataset
 from torch.nn.init import xavier_normal_, kaiming_uniform_, xavier_uniform_
-from torch.optim import Adam
+from torch.optim import Adam, AdamW
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
@@ -32,7 +32,7 @@ from nltk.tokenize import word_tokenize, sent_tokenize
 
 import datasets
 from transformers import (
-	AdamW,
+	# AdamW,
 	Adafactor,
 	AutoModelForSequenceClassification,
 	AutoModelForMultipleChoice,

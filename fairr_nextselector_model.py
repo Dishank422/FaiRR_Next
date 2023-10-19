@@ -143,12 +143,13 @@ class FaiRRNextSelector(BaseModel):
         norm_masked_exp_logits[zeros_mask_] = 1e-8
 
         logvals = torch.log(norm_masked_exp_logits)
-        rule_loss_reduced = F.nll_loss(logvals, torch.nonzero(targets)[:, 1], reduction='mean')
+        rule_targets=targets*token_mask
+        rule_loss_reduced = F.nll_loss(logvals, torch.nonzero(rule_targets)[:, 1], reduction='mean')
 
         # for facts
         token_mask=torch.where(token_mask_copy==2,1,0)
-
-        loss_not_reduced =  F.binary_cross_entropy_with_logits(fact_outputs, targets, reduction = 'none')
+        fact_targets=targets*token_mask
+        loss_not_reduced =  F.binary_cross_entropy_with_logits(fact_outputs, fact_targets, reduction = 'none')
         assert loss_not_reduced.shape == token_mask.shape
         loss_masked = loss_not_reduced * token_mask
         fact_loss_reduced = loss_masked.sum()/token_mask.sum()

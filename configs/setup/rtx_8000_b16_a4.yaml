@@ -2,5 +2,5 @@ train_batch_size: 16
 eval_batch_size: 16
 accumulate_grad_batches: 4
 num_workers: 8
-fp16: False
+fp16: True
 gpus: 1
