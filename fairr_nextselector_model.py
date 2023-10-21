@@ -156,7 +156,7 @@ class FaiRRNextSelector(BaseModel):
 
         return rule_loss_reduced, fact_loss_reduced
     
-    def calc_acc_util(self, preds, targets, token_mask):
+    def calc_acc(self, preds, targets, token_mask):
         acc_not_reduced = (preds == targets).float()
         acc_masked      = torch.mul(acc_not_reduced, token_mask)
         acc_reduced     = acc_masked.sum()/token_mask.sum()
@@ -164,10 +164,7 @@ class FaiRRNextSelector(BaseModel):
 
         return acc
     
-    def calc_acc(self, preds, targets, token_mask):
-        return self.calc_acc_util(preds, targets, token_mask)
-    
-    def calc_F1_util(self, preds, targets, token_mask):
+    def calc_F1(self, preds, targets, token_mask):
         '''calculates the binary F1 score between preds and targets, with positive class being 1'''
         assert preds.shape == targets.shape
         assert preds.shape == token_mask.shape
@@ -182,20 +179,13 @@ class FaiRRNextSelector(BaseModel):
         macro_f1         = f1_score(y_true=targets_masked, y_pred=preds_masked, average='macro')
         micro_f1         = f1_score(y_true=targets_masked, y_pred=preds_masked, average='micro')
 
-        return {'f1_class1':binary_f1_class1, 'f1_class0':binary_f1_class0, 'macro_f1':macro_f1, 'micro_f1':micro_f1}
-    
-    def calc_F1(self, preds, targets, token_mask):
-        return self.calc_F1_util(preds, targets, token_mask)
-    
+        return {'f1_class1':binary_f1_class1, 'f1_class0':binary_f1_class0, 'macro_f1':macro_f1, 'micro_f1':micro_f1}    
 
-    def calc_perf_metrics_util(self, preds, targets, token_mask):
+    def calc_perf_metrics(self, preds, targets, token_mask):
         acc       = self.calc_acc(preds, targets, token_mask)
         F1_scores = self.calc_F1(preds, targets, token_mask)
 
         return {'acc':acc, 'f1_class1':F1_scores['f1_class1'], 'f1_class0':F1_scores['f1_class0'], 'macro_f1':F1_scores['macro_f1'], 'micro_f1':F1_scores['micro_f1']}
-    
-    def calc_perf_metrics(self, preds, targets, token_mask):
-        return self.calc_perf_metrics_util(preds, targets, token_mask)
     
     def run_step(self, batch, split):
         rule_outputs, fact_outputs = self(batch['all_sents'], batch['attn_mask'])
