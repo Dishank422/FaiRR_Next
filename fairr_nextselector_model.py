@@ -212,13 +212,13 @@ class FaiRRNextSelector(BaseModel):
         perf_metrics            = self.calc_perf_metrics(rule_preds.squeeze(), targets.squeeze(), token_mask.squeeze())
 
         if split == 'train':
-            self.log(f'rules train_loss_step', rule_loss.item(), prog_bar=True, on_step=True, on_epoch=True)
+            self.log(f'rules train_loss', rule_loss.item(), prog_bar=True, on_step=True, on_epoch=True)
             for metric in perf_metrics.keys():
-                self.log(f'rules train_{metric}_step', perf_metrics[metric], on_step=True, on_epoch=True)
+                self.log(f'rules train_{metric}', perf_metrics[metric], on_step=True, on_epoch=True)
         else:
             self.log(f'rules {split}_loss_step', rule_loss.item(), prog_bar=True, on_step=True, on_epoch=True)
             for metric in perf_metrics.keys():
-                self.log(f'rules {split}_{metric}_step', perf_metrics[metric], on_step=True, on_epoch=True)
+                self.log(f'rules {split}_{metric}', perf_metrics[metric], on_step=True, on_epoch=True)
 
         # for facts
         token_mask=torch.where(token_mask_copy==2,1,0)
@@ -226,13 +226,13 @@ class FaiRRNextSelector(BaseModel):
         perf_metrics      = self.calc_perf_metrics(fact_preds.squeeze(), targets.squeeze(), token_mask.squeeze())
 
         if split == 'train':
-            self.log(f'facts train_loss_step', fact_loss.item(), prog_bar=True, on_step=True, on_epoch=True)
+            self.log(f'facts train_loss', fact_loss.item(), prog_bar=True, on_step=True, on_epoch=True)
             for metric in perf_metrics.keys():
-                self.log(f'facts train_{metric}_step', perf_metrics[metric], on_step=True, on_epoch=True)
+                self.log(f'facts train_{metric}', perf_metrics[metric], on_step=True, on_epoch=True)
         else:
-            self.log(f'facts {split}_loss_step', fact_loss.item(), prog_bar=True, on_step=True, on_epoch=True)
+            self.log(f'facts {split}_loss', fact_loss.item(), prog_bar=True, on_step=True, on_epoch=True)
             for metric in perf_metrics.keys():
-                self.log(f'facts {split}_{metric}_step', perf_metrics[metric], on_step=True, on_epoch=True)
+                self.log(f'facts {split}_{metric}', perf_metrics[metric], on_step=True, on_epoch=True)
 
         lambd = 1
         loss = rule_loss+lambd*fact_loss

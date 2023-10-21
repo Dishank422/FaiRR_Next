@@ -17,8 +17,8 @@ model_dict = {
 
 monitor_dict = {
 	'fairr_ruleselector'      : ('valid_macro_f1_epoch', 'max'),
-	'fairr_factselector'      : ('valid_macro_f1_epoch', 'max'),
-	'fairr_nextselector'		  : ('valid_macro_f1_epoch', 'max'),
+	'fairr_factselector'      : ('rules valid_macro_f1_epoch', 'max'),
+	'fairr_nextselector'	  : ('valid_macro_f1_epoch', 'max'),
 	'fairr_reasoner'          : ('valid_acc_epoch', 'max'),
 	'fairr_inference'         : ('valid_acc_epoch', 'max'),
 	'fairr_nextinference'	  : ('valid_acc_epoch', 'max'),
