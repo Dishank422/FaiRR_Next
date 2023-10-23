@@ -251,7 +251,7 @@ class PWQRuleInstance:
 			sep_token_indices = [j for j in range(len(token_mask[i])) if token_mask[i, j] == 1]
 			token_mask[i, sep_token_indices[-1]] = 0
 			sep_token_indices = sep_token_indices[:-1]
-			for j in sep_token_indices[len(new_rules[i]):]:
+			for j in sep_token_indices[len(list(new_rules[i])):]:
 				token_mask[i, j] = 2
 		token_mask[:, 0] = 1
 
