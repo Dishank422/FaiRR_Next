@@ -418,6 +418,7 @@ class FaiRRNextInference(BaseModel):
 			return (0, [['None']])
 
 	def run_step(self, batch, split):
+		batch_size = len(batch['all_facts'])
 		out         = self(batch)
 		targets     = batch['all_answer']
 		gold_proofs = batch['all_proof']
@@ -438,11 +439,11 @@ class FaiRRNextInference(BaseModel):
 			print(f'\nProof Accuracy: {np.mean(self.local_proof_accuracy)}\n')
 
 		if split == 'train':
-			self.log(f'train_ans_acc_step', ans_acc, prog_bar=True)
-			self.log(f'train_prf_acc_step', prf_acc, prog_bar=True)
+			self.log(f'train_ans_acc_step', ans_acc, prog_bar=True, batch_size=batch_size)
+			self.log(f'train_prf_acc_step', prf_acc, prog_bar=True, batch_size=batch_size)
 		else:
-			self.log(f'{split}_ans_acc_step', ans_acc, prog_bar=True, sync_dist=True)
-			self.log(f'{split}_prf_acc_step', prf_acc, prog_bar=True, sync_dist=True)
+			self.log(f'{split}_ans_acc_step', ans_acc, prog_bar=True, sync_dist=True, batch_size=batch_size)
+			self.log(f'{split}_prf_acc_step', prf_acc, prog_bar=True, sync_dist=True, batch_size=batch_size)
 
 		return {'ans_acc': ans_acc, 'prf_acc': prf_acc, 'loss': torch.FloatTensor([0]).to(self.reasoner.device)}
 
