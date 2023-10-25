@@ -114,7 +114,7 @@ def main(args, splits='all'):
 		# for DEBUG purposes only
 
 	args.root_dir = f'../saved/{args.name}'
-	if args.model == 'fairr_inference':
+	if args.model == 'fairr_inference' or args.model == 'fairr_nextinference':
 		os.mkdir(args.root_dir)
 
 	print('Building trainer...')
