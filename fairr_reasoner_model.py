@@ -64,27 +64,28 @@ class FaiRRReasoner(BaseModel):
 		acc     = self.calc_acc(preds, targets)
 
 		if split == 'train':
-			self.log(f'train_loss_step', loss.item(), prog_bar=True)
-			self.log(f'train_acc_step', acc.item(), prog_bar=True)
+			self.log(f'train_loss', loss.item(), prog_bar=True, on_step=True, on_epoch=True)
+			self.log(f'train_acc', acc.item(), prog_bar=True, on_step=True, on_epoch=True)
 		else:
-			self.log(f'{split}_loss_step', loss.item(), prog_bar=True, sync_dist=True)
-			self.log(f'{split}_acc_step', acc.item(), prog_bar=True, sync_dist=True)
+			self.log(f'{split}_loss', loss.item(), prog_bar=True, sync_dist=True, on_step=True, on_epoch=True)
+			self.log(f'{split}_acc', acc.item(), prog_bar=True, sync_dist=True, on_step=True, on_epoch=True)
 
 		return {'loss': loss, 'acc': acc}
 
 	def aggregate_epoch(self, outputs, split):
-		loss = torch.stack([x['loss'] for x in outputs]).mean()
-		acc  = torch.stack([x['acc'] for x in outputs]).mean()
+		# loss = torch.stack([x['loss'] for x in outputs]).mean()
+		# acc  = torch.stack([x['acc'] for x in outputs]).mean()
 
-		if split == 'train':
-			self.log(f'train_loss_epoch', loss.item())
-			self.log(f'train_acc_epoch', acc.item())
-		elif split == 'valid':
-			self.log(f'valid_loss_epoch', loss.item(), sync_dist=True)
-			self.log(f'valid_acc_epoch', acc.item(), sync_dist=True)
-		elif split == 'test':
-			self.log(f'test_loss_epoch', loss.item(), sync_dist=True)
-			self.log(f'test_acc_epoch', acc.item(), sync_dist=True)
+		# if split == 'train':
+		# 	self.log(f'train_loss_epoch', loss.item())
+		# 	self.log(f'train_acc_epoch', acc.item())
+		# elif split == 'valid':
+		# 	self.log(f'valid_loss_epoch', loss.item(), sync_dist=True)
+		# 	self.log(f'valid_acc_epoch', acc.item(), sync_dist=True)
+		# elif split == 'test':
+		# 	self.log(f'test_loss_epoch', loss.item(), sync_dist=True)
+		# 	self.log(f'test_acc_epoch', acc.item(), sync_dist=True)
+		return
 
 	def configure_optimizers(self):
 		no_decay = ['bias', 'LayerNorm.weight']
