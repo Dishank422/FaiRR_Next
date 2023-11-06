@@ -1,0 +1,4 @@
+dataset: pwq_leq_0to3_OWA_next
+train_dataset: pwq_leq_0to3_OWA_next
+dev_dataset: pwq_leq_0to3_OWA_next
+test_dataset: pwq_leq_0to3_OWA_next
