@@ -4,7 +4,8 @@ This script is the joint selector component of FaiRR_Next. It selects a rule fro
 
 from helper import *
 from basemodel import BaseModel
-
+import warnings
+warnings.filterwarnings("ignore")
 
 class FaiRRNextSelector(BaseModel):
     def __init__(self, arch='roberta_large', train_batch_size=16, eval_batch_size=16, accumulate_grad_batches=1, learning_rate=1e-5, max_epochs=5,\
@@ -66,7 +67,7 @@ class FaiRRNextSelector(BaseModel):
         y_indices         = torch.cat([torch.arange(x) for x in mask_len]).to(device)
         x_indices         = mask_nonzero[:, 0]
         filtered_logits   = torch.full((input_ids.shape[0], mask_len.max()), -1000.0).to(device)
-        filtered_logits[x_indices, y_indices] = (torch.masked_select(rule_logits, token_mask.bool())).to(filtered_logits.dtype)
+        filtered_logits[x_indices, y_indices] = (torch.masked_select(rule_logits, token_mask.bool()))
 
         # Then compute the predictions for each of the logit
         argmax_filtered_logits	= torch.argmax(filtered_logits, dim=1)
@@ -100,7 +101,7 @@ class FaiRRNextSelector(BaseModel):
         y_indices         = torch.cat([torch.arange(x) for x in mask_len]).to(device)
         x_indices         = mask_nonzero[:, 0]
         filtered_logits   = torch.full((input_ids.shape[0], mask_len.max()), -1000.0).to(device)
-        filtered_logits[x_indices, y_indices] = (torch.masked_select(fact_logits, token_mask.bool())).to(filtered_logits.dtype)
+        filtered_logits[x_indices, y_indices] = (torch.masked_select(fact_logits, token_mask.bool()))
 
         # Then compute the predictions for each of the logit
         preds             = (filtered_logits > 0.0)
