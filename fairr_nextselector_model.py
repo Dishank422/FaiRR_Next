@@ -225,7 +225,7 @@ class FaiRRNextSelector(BaseModel):
             for metric in perf_metrics.keys():
                 self.log(f'facts {split}_{metric}', perf_metrics[metric], on_step=True, on_epoch=True)
 
-        lambd = 10
+        lambd = 50
         loss = rule_loss+lambd*fact_loss
         self.log('loss', loss.item(), prog_bar=True, on_step=True, on_epoch=True)
         return {'loss': loss}
