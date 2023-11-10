@@ -61,7 +61,7 @@ class FaiRRRuleSelector(BaseModel):
 		y_indices         = torch.cat([torch.arange(x) for x in mask_len]).to(device)
 		x_indices         = mask_nonzero[:, 0]
 		filtered_logits   = torch.full((input_ids.shape[0], mask_len.max()), -1000.0).to(device)
-		filtered_logits[x_indices, y_indices] = torch.masked_select(logits, token_mask.bool())
+		filtered_logits[x_indices, y_indices] = torch.masked_select(logits, token_mask.bool()).to(filtered_logits.dtype)
 
 		# Then compute the predictions for each of the logit
 		argmax_filtered_logits	= torch.argmax(filtered_logits, dim=1)
