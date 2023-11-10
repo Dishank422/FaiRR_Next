@@ -10,7 +10,7 @@ warnings.filterwarnings("ignore")
 class FaiRRNextSelector(BaseModel):
     def __init__(self, arch='roberta_large', train_batch_size=16, eval_batch_size=16, accumulate_grad_batches=1, learning_rate=1e-5, max_epochs=5,\
                     optimizer='adamw', adam_epsilon=1e-8, weight_decay=0.0, lr_scheduler='linear_with_warmup', warmup_updates=0.0, freeze_epochs=-1, gpus=1,\
-                    hf_name='roberta-large'):
+                    hf_name='roberta-large', lambd=10):
         super().__init__(train_batch_size=train_batch_size, max_epochs=max_epochs, gpus=gpus)
         self.save_hyperparameters()
         assert arch == 'roberta_large'
@@ -29,6 +29,7 @@ class FaiRRNextSelector(BaseModel):
         self.p.warmup_updates          = warmup_updates
         self.p.freeze_epochs           = freeze_epochs
         self.p.gpus                    = gpus
+        self.lambd                     = lambd
 
         self.text_encoder    = AutoModel.from_pretrained(hf_name)
         self.tokenizer       = AutoTokenizer.from_pretrained(hf_name)
@@ -67,7 +68,7 @@ class FaiRRNextSelector(BaseModel):
         y_indices         = torch.cat([torch.arange(x) for x in mask_len]).to(device)
         x_indices         = mask_nonzero[:, 0]
         filtered_logits   = torch.full((input_ids.shape[0], mask_len.max()), -1000.0).to(device)
-        filtered_logits[x_indices, y_indices] = (torch.masked_select(rule_logits, token_mask.bool()))
+        filtered_logits[x_indices, y_indices] = (torch.masked_select(rule_logits, token_mask.bool())).to(filtered_logits.dtype)
 
         # Then compute the predictions for each of the logit
         argmax_filtered_logits	= torch.argmax(filtered_logits, dim=1)
@@ -101,7 +102,7 @@ class FaiRRNextSelector(BaseModel):
         y_indices         = torch.cat([torch.arange(x) for x in mask_len]).to(device)
         x_indices         = mask_nonzero[:, 0]
         filtered_logits   = torch.full((input_ids.shape[0], mask_len.max()), -1000.0).to(device)
-        filtered_logits[x_indices, y_indices] = (torch.masked_select(fact_logits, token_mask.bool()))
+        filtered_logits[x_indices, y_indices] = (torch.masked_select(fact_logits, token_mask.bool())).to(filtered_logits.dtype)
 
         # Then compute the predictions for each of the logit
         preds             = (filtered_logits > 0.0)
@@ -225,8 +226,7 @@ class FaiRRNextSelector(BaseModel):
             for metric in perf_metrics.keys():
                 self.log(f'facts {split}_{metric}', perf_metrics[metric], on_step=True, on_epoch=True)
 
-        lambd = 50
-        loss = rule_loss+lambd*fact_loss
+        loss = rule_loss+self.lambd*fact_loss
         self.log('loss', loss.item(), prog_bar=True, on_step=True, on_epoch=True)
         return {'loss': loss}
     
