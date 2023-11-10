@@ -4,8 +4,6 @@ This script is the joint selector component of FaiRR_Next. It selects a rule fro
 
 from helper import *
 from basemodel import BaseModel
-import warnings
-warnings.filterwarnings("ignore")
 
 class FaiRRNextSelector(BaseModel):
     def __init__(self, arch='roberta_large', train_batch_size=16, eval_batch_size=16, accumulate_grad_batches=1, learning_rate=1e-5, max_epochs=5,\
