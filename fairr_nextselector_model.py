@@ -4,11 +4,13 @@ This script is the joint selector component of FaiRR_Next. It selects a rule fro
 
 from helper import *
 from basemodel import BaseModel
+import warnings
+warnings.filterwarnings("ignore")
 
 class FaiRRNextSelector(BaseModel):
     def __init__(self, arch='roberta_large', train_batch_size=16, eval_batch_size=16, accumulate_grad_batches=1, learning_rate=1e-5, max_epochs=5,\
                     optimizer='adamw', adam_epsilon=1e-8, weight_decay=0.0, lr_scheduler='linear_with_warmup', warmup_updates=0.0, freeze_epochs=-1, gpus=1,\
-                    hf_name='roberta-large', lambd=10):
+                    hf_name='roberta-large', lambd=1):
         super().__init__(train_batch_size=train_batch_size, max_epochs=max_epochs, gpus=gpus)
         self.save_hyperparameters()
         assert arch == 'roberta_large'
@@ -35,30 +37,61 @@ class FaiRRNextSelector(BaseModel):
         self.out_dim         = out_dim
         self.rule_classifier = nn.Linear(out_dim, 1)
         self.fact_classifier = nn.Linear(out_dim, 1)
+        self.stop_predictor  = nn.Linear(out_dim, 1)
         self.dropout         = torch.nn.Dropout(self.text_encoder.config.hidden_dropout_prob)
 
         xavier_normal_(self.fact_classifier.weight)
         self.fact_classifier.bias.data.zero_()
         xavier_normal_(self.rule_classifier.weight)
         self.rule_classifier.bias.data.zero_()
+        xavier_normal_(self.stop_predictor.weight)
+        self.stop_predictor.bias.data.zero_()
 
     def forward(self, input_ids, attn_mask):
         last_hidden_state = self.text_encoder(input_ids=input_ids, attention_mask=attn_mask)['last_hidden_state']  # shape (batchsize, seqlen, hiddensize)
         last_hidden_state = self.dropout(last_hidden_state)
         fact_logits = self.fact_classifier(last_hidden_state).squeeze()
         rule_logits = self.rule_classifier(last_hidden_state).squeeze()
+        stop_logits = self.stop_predictor(last_hidden_state).squeeze()
 
-        return fact_logits, rule_logits
+        return fact_logits, rule_logits, stop_logits
 
     def predict(self, input_ids, token_mask, attn_mask):
         device  = input_ids.device
         outputs = self(input_ids, attn_mask)
-        fact_logits, rule_logits  = outputs
+        fact_logits, rule_logits, stop_logits  = outputs
 
         token_mask_copy=token_mask.detach().clone()
+
+        # for stopping
+        token_mask = torch.zeros_like(token_mask_copy)
+        token_mask[:, 0] = 1
+
+        # First filter out the logits corresponding to the [SEP] tokens
+        mask_len = token_mask.sum(1)
+        mask_nonzero = torch.nonzero(token_mask)
+        y_indices = torch.cat([torch.arange(x) for x in mask_len]).to(device)
+        x_indices = mask_nonzero[:, 0]
+        filtered_logits = torch.full((input_ids.shape[0], mask_len.max()), -1000.0).to(device)
+        filtered_logits[x_indices, y_indices] = (torch.masked_select(stop_logits, token_mask.bool()))
+
+        # Then compute the predictions for each of the logit
+        preds = (filtered_logits > 0.0)
+
+        # Finally, save a padded fact matrix with indices of the facts and the corresponding mask
+        pred_mask_lengths = preds.sum(1)
+        pred_mask_nonzero = torch.nonzero(preds)
+        y_indices = torch.cat([torch.arange(x) for x in pred_mask_lengths]).to(device)
+        x_indices = pred_mask_nonzero[:, 0]
+        filtered_stop_ids = torch.full((input_ids.shape[0], pred_mask_lengths.max()), -1).to(device)
+        filtered_stop_ids[x_indices, y_indices] = pred_mask_nonzero[:, 1]
+
+        # create mask for instances that don't have any fact selected so that they are pruned later in the inference loop
+        filtered_stop_mask = ~(filtered_stop_ids.shape[1] == (filtered_stop_ids == -1).sum(1))
                 
         # for rules
         token_mask=torch.where(token_mask_copy==1,1,0)
+        token_mask[:, 0] = 0
 
         # First filter out the logits corresponding to the valid tokens
         mask_len          = token_mask.sum(1) # (batchsize) eg [8,3,2,1]
@@ -66,7 +99,7 @@ class FaiRRNextSelector(BaseModel):
         y_indices         = torch.cat([torch.arange(x) for x in mask_len]).to(device)
         x_indices         = mask_nonzero[:, 0]
         filtered_logits   = torch.full((input_ids.shape[0], mask_len.max()), -1000.0).to(device)
-        filtered_logits[x_indices, y_indices] = (torch.masked_select(rule_logits, token_mask.bool())).to(filtered_logits.dtype)
+        filtered_logits[x_indices, y_indices] = (torch.masked_select(rule_logits, token_mask.bool()))
 
         # Then compute the predictions for each of the logit
         argmax_filtered_logits	= torch.argmax(filtered_logits, dim=1)
@@ -100,7 +133,7 @@ class FaiRRNextSelector(BaseModel):
         y_indices         = torch.cat([torch.arange(x) for x in mask_len]).to(device)
         x_indices         = mask_nonzero[:, 0]
         filtered_logits   = torch.full((input_ids.shape[0], mask_len.max()), -1000.0).to(device)
-        filtered_logits[x_indices, y_indices] = (torch.masked_select(fact_logits, token_mask.bool())).to(filtered_logits.dtype)
+        filtered_logits[x_indices, y_indices] = (torch.masked_select(fact_logits, token_mask.bool()))
 
         # Then compute the predictions for each of the logit
         preds             = (filtered_logits > 0.0)
@@ -116,16 +149,26 @@ class FaiRRNextSelector(BaseModel):
         # create mask for instances that don't have any fact selected so that they are pruned later in the inference loop
         filtered_fact_mask     = ~(filtered_fact_ids.shape[1] == (filtered_fact_ids == -1).sum(1))
 
-        return filtered_rule_ids, filtered_rule_mask, filtered_fact_ids, filtered_fact_mask
+        return filtered_rule_ids, filtered_rule_mask, filtered_fact_ids, filtered_fact_mask, filtered_stop_ids, filtered_stop_mask
 
-    def calc_loss(self, rule_outputs, fact_outputs, targets, token_mask):
+    def calc_loss(self, rule_outputs, fact_outputs, stop_outputs, targets, token_mask):
         token_mask_copy=token_mask.detach().clone()
-        
+
+        # for stopping
+        token_mask = torch.zeros_like(token_mask)
+        token_mask[:,0]=1
+        stop_targets = targets * token_mask
+        loss_not_reduced = F.binary_cross_entropy_with_logits(stop_outputs, stop_targets, reduction='none')
+        assert loss_not_reduced.shape == token_mask.shape
+        loss_masked = loss_not_reduced * token_mask
+        stop_loss_reduced = loss_masked.sum() / token_mask.sum()
+
         # for rules
         token_mask=torch.where(token_mask_copy==1,1,0)
+        token_mask[:, 0] = 0
 
         # all rows of target are one hot, i.e., there is only 1 rule that needs to be selected
-        assert torch.all(torch.sum(targets * token_mask, dim=1) == torch.ones(targets.shape[0]).to(targets.device))
+        #assert torch.all(torch.sum(targets * token_mask, dim=1) == torch.ones(targets.shape[0]).to(targets.device))
 
         exp_logits = torch.exp(rule_outputs)
         assert exp_logits.shape == token_mask.shape
@@ -144,7 +187,9 @@ class FaiRRNextSelector(BaseModel):
 
         logvals = torch.log(norm_masked_exp_logits)
         rule_targets=targets*token_mask
-        rule_loss_reduced = F.nll_loss(logvals, torch.nonzero(rule_targets)[:, 1], reduction='mean')
+        rule_targets = torch.nonzero(rule_targets)
+        logvals = logvals[rule_targets[:, 0]]
+        rule_loss_reduced = F.nll_loss(logvals, rule_targets[:, 1], reduction='mean')
 
         # for facts
         token_mask=torch.where(token_mask_copy==2,1,0)
@@ -154,7 +199,7 @@ class FaiRRNextSelector(BaseModel):
         loss_masked = loss_not_reduced * token_mask
         fact_loss_reduced = loss_masked.sum()/token_mask.sum()
 
-        return rule_loss_reduced, fact_loss_reduced
+        return rule_loss_reduced, fact_loss_reduced, stop_loss_reduced
     
     def calc_acc(self, preds, targets, token_mask):
         acc_not_reduced = (preds == targets).float()
@@ -188,14 +233,30 @@ class FaiRRNextSelector(BaseModel):
         return {'acc':acc, 'f1_class1':F1_scores['f1_class1'], 'f1_class0':F1_scores['f1_class0'], 'macro_f1':F1_scores['macro_f1'], 'micro_f1':F1_scores['micro_f1']}
     
     def run_step(self, batch, split):
-        rule_outputs, fact_outputs = self(batch['all_sents'], batch['attn_mask'])
+        rule_outputs, fact_outputs, stop_outputs = self(batch['all_sents'], batch['attn_mask'])
         token_mask_copy = batch['all_token_mask']
         targets    = batch['all_token_labels']
 
-        rule_loss, fact_loss = self.calc_loss(rule_outputs.squeeze(), fact_outputs.squeeze(), targets.squeeze(), token_mask_copy.squeeze())
+        rule_loss, fact_loss, stop_loss = self.calc_loss(rule_outputs.squeeze(), fact_outputs.squeeze(), stop_outputs.squeeze(), targets.squeeze(), token_mask_copy.squeeze())
+
+        # for stopping
+        token_mask = torch.zeros_like(token_mask_copy)
+        token_mask[:, 0] = 1
+        stop_preds = (stop_outputs > 0.0).float().squeeze()
+        perf_metrics = self.calc_perf_metrics(stop_preds.squeeze(), targets.squeeze(), token_mask.squeeze())
+
+        if split == 'train':
+            self.log(f'stop train_loss', stop_loss.item(), prog_bar=True, on_step=True, on_epoch=True)
+            for metric in perf_metrics.keys():
+                self.log(f'stop train_{metric}', perf_metrics[metric], on_step=True, on_epoch=True)
+        else:
+            self.log(f'stop {split}_loss_step', stop_loss.item(), prog_bar=True, on_step=True, on_epoch=True)
+            for metric in perf_metrics.keys():
+                self.log(f'stop {split}_{metric}', perf_metrics[metric], on_step=True, on_epoch=True)
 
         # for rules
         token_mask=torch.where(token_mask_copy==1,1,0)
+        token_mask[:, 0] = 0
         relevant_outputs        = rule_outputs * token_mask
         argmax_relevant_outputs = torch.argmax(relevant_outputs, dim=1)
         rule_preds              = (F.one_hot(argmax_relevant_outputs, num_classes=rule_outputs.shape[1])).int()
@@ -224,7 +285,7 @@ class FaiRRNextSelector(BaseModel):
             for metric in perf_metrics.keys():
                 self.log(f'facts {split}_{metric}', perf_metrics[metric], on_step=True, on_epoch=True)
 
-        loss = rule_loss+self.lambd*fact_loss
+        loss = rule_loss+fact_loss+stop_loss
         self.log('loss', loss.item(), prog_bar=True, on_step=True, on_epoch=True)
         return {'loss': loss}
     
@@ -303,6 +364,18 @@ class FaiRRNextSelector(BaseModel):
             },
             {
                 'params': [p for n, p in self.fact_classifier.named_parameters() if any(nd in n for nd in no_decay)],
+                'weight_decay': 0.0,
+            }
+        ]
+
+        optimizer_grouped_parameters += [
+            {
+                'params': [p for n, p in self.stop_predictor.named_parameters() if
+                           not any(nd in n for nd in no_decay)],
+                'weight_decay': self.p.weight_decay,
+            },
+            {
+                'params': [p for n, p in self.stop_predictor.named_parameters() if any(nd in n for nd in no_decay)],
                 'weight_decay': 0.0,
             }
         ]

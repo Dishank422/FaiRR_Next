@@ -324,7 +324,7 @@ class FaiRRNextInference(BaseModel):
 			while not stop:
 				# process data for rule selector and select rule
 				input_ids, attn_mask, token_mask = PWQRuleInstance.next_tokenize_batch(self.next_tokenizer, rules, facts, ques)
-				rule_ids, rule_mask, fact_ids, fact_mask = self.next_selector.predict(input_ids.to(device), token_mask.to(device), attn_mask.to(device))
+				rule_ids, rule_mask, fact_ids, fact_mask, stop_ids, stop_mask = self.next_selector.predict(input_ids.to(device), token_mask.to(device), attn_mask.to(device))
 
 				# loop break condition
 				if rule_mask.sum().item() == 0:
@@ -342,7 +342,7 @@ class FaiRRNextInference(BaseModel):
 					# fact_ids, fact_mask = self.fact_selector.predict(input_ids.to(device), token_mask.to(device), attn_mask.to(device))
 
 					# update valid_mask to account for cases when no facts are selected (batching trick)
-					valid_mask     = valid_mask * fact_mask
+					valid_mask     = valid_mask * fact_mask * stop_mask
 
 					# if nothing is valid then stop
 					if valid_mask.sum() == 0:
