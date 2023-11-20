@@ -53,6 +53,12 @@ python process_proofwriter.py --dataset pwq_leq_0to3 --fairr_model fairr_fact --
 # train factselector model
 python main.py --override fairr_factselector,pwq_leq_0to3_OWA_fact
 
+# make data for training rule & factselector
+python process_proofwriter.py --dataset pwq_leq_0to3 --fairr_model fairr_next --arch roberta_large
+
+# train rule & fact selector model
+python main.py --override fairr_nextselector,pwq_leq_0to3_OWA_next
+
 # make data for training reasoner
 python process_proofwriter.py --dataset pw_leq_0to3 --fairr_model fairr_reasoner --arch t5_large
 
@@ -64,7 +70,10 @@ python process_proofwriter.py --dataset pwu_leq_3
 # Note: using the above command, the D3 data will be generated for evaluation
 
 # evaluate the model checkpoints from above using the inference pipeline
-python main.py --override fairr_inference,evaluate --dataset pwu_leq_3_OWA --ruleselector_ckpt <path_to_trained_checkpoint> --factselector_ckpt <path_to_trained_checkpoint> --reasoner_ckpt <path_to_trained_checkpoint>
+python main.py --override fairr_inference,evaluate --dataset pwu_leq_3_OWA --nextselector_ckpt <path_to_trained_checkpoint> --factselector_ckpt <path_to_trained_checkpoint> --reasoner_ckpt <path_to_trained_checkpoint>
+
+# evaluate the model checkpoints from above using the inference pipeline
+python main.py --override fairr_nextinference,evaluate --dataset pwu_leq_3_OWA --nextselector_ckpt <path_to_trained_checkpoint> --reasoner_ckpt <path_to_trained_checkpoint>
 ```
 
 A sample command to evaluate the model using the trained checkpoints would look like as follows (checkpoint paths are for illustration purposes):
